@@ -229,8 +229,18 @@ func (p *parser) tryVisitHeader(diff string) bool {
 		p.diff.FileDiff[fileHEAD].NewMode = strings.TrimPrefix(diff, "new file mode ")
 		return true
 	}
+	if strings.HasPrefix(diff, "new mode ") {
+		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].NewMode = strings.TrimPrefix(diff, "new mode ")
+		return true
+	}
+
 	if strings.HasPrefix(diff, "deleted file mode ") {
 		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeDeleted
+		return true
+	}
+	if strings.HasPrefix(diff, "old mode ") {
+		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
 		return true
 	}
 	if strings.HasPrefix(diff, "rename from") || strings.HasPrefix(diff, "rename to") {
