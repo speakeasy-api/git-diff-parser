@@ -1,0 +1,1 @@
+significant change &git_diff_parser.ContentChange{Type:"add", From:"", To:"add a line"} in file1

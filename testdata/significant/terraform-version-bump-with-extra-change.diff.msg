@@ -1,0 +1,1 @@
+significant change &git_diff_parser.ContentChange{Type:"modify", From:" \t\t\tUserAgent:         \"speakeasy-sdk/go", To:" \t\t\tUserAgent:         \"speakeasy-sdk/crazy-go"} in internal/sdk/sdk.go

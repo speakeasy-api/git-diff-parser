@@ -1,0 +1,1 @@
+significant diff &git_diff_parser.FileDiff{FromFile:"b.txt", ToFile:"c.txt", Type:"modify", IsBinary:false, NewMode:"", Hunks:[]git_diff_parser.Hunk(nil), BinaryPatch:[]git_diff_parser.BinaryPatch(nil)}
