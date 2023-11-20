@@ -1,0 +1,1 @@
+significant change &pkg.ContentChange{Type:"delete", From:"a", To:""} in a.txt

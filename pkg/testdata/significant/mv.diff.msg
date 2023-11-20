@@ -1,0 +1,1 @@
+significant diff &pkg.FileDiff{FromFile:"b.txt", ToFile:"c.txt", Type:"modify", IsBinary:false, NewMode:"", Hunks:[]pkg.Hunk(nil), BinaryHunk:[]pkg.BinaryPatch(nil)}
