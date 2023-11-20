@@ -1,0 +1,1 @@
+significant change &git_diff_parser.ContentChange{Type:"delete", From:"a", To:""} in a.txt

@@ -1,0 +1,1 @@
+significant diff &git_diff_parser.FileDiff{FromFile:"favicon-16x16-light.png", ToFile:"favicon-16x16-light.png", Type:"modify", IsBinary:false, NewMode:"100644", Hunks:[]git_diff_parser.Hunk(nil), BinaryPatch:[]git_diff_parser.BinaryPatch(nil)}

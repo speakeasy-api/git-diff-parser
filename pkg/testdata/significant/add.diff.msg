@@ -1,1 +1,0 @@
-significant diff &pkg.FileDiff{FromFile:"a.txt", ToFile:"a.txt", Type:"modify", IsBinary:false, NewMode:"100644", Hunks:[]pkg.Hunk{pkg.Hunk{Change:pkg.ChangeList{pkg.ContentChange{Type:"add", From:"", To:"a"}, pkg.ContentChange{Type:"", From:"", To:""}}, StartLineNumberOld:0, CountOld:0, StartLineNumberNew:1, CountNew:1}}, BinaryHunk:[]pkg.BinaryPatch(nil)}

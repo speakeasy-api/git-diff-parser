@@ -1,15 +1,18 @@
-package pkg
+package git_diff_parser_test
 
 import (
 	"embed"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	git_diff_parser "github.com/speakeasy-api/git-diff-parser"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 //go:embed testdata
@@ -21,7 +24,6 @@ func TestParse(t *testing.T) {
 		relativePath string
 		input        string
 		want         bool
-		msg          string
 	}
 	significantDiffs, err := testdata.ReadDir("testdata/significant")
 	assert.NoError(t, err)
@@ -55,9 +57,11 @@ func TestParse(t *testing.T) {
 		})
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err, msg := SignificantChange(tt.input, func(diff *FileDiff, change *ContentChange) (bool, string) {
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, msg, err := git_diff_parser.SignificantChange(test.input, func(diff *git_diff_parser.FileDiff, change *git_diff_parser.ContentChange) (bool, string) {
 				if diff.ToFile == "gen.yaml" || diff.ToFile == "RELEASES.md" {
 					return false, ""
 				}
@@ -71,18 +75,18 @@ func TestParse(t *testing.T) {
 					return false, ""
 				}
 
-				if diff.Type == FileDiffTypeModified {
+				if diff.Type == git_diff_parser.FileDiffTypeModified {
 					return true, fmt.Sprintf("significant diff %#v", diff)
 				}
-				if change.Type == ContentChangeTypeNOOP {
+				if change.Type == git_diff_parser.ContentChangeTypeNOOP {
 					return false, ""
 				}
 
 				return true, fmt.Sprintf("significant change %#v in %s", change, diff.ToFile)
 			})
 			require.NoError(t, err)
-			MatchMessageSnapshot(t, tt.relativePath+".msg", msg)
-			assert.Equal(t, tt.want, got)
+			MatchMessageSnapshot(t, test.relativePath+".msg", msg)
+			assert.Equal(t, test.want, got)
 		})
 	}
 }

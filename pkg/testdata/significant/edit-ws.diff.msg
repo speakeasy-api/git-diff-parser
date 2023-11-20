@@ -1,1 +1,0 @@
-significant change &pkg.ContentChange{Type:"add", From:"", To:"a"} in a.txt

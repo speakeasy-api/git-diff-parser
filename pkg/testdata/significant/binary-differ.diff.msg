@@ -1,1 +1,0 @@
-significant diff &pkg.FileDiff{FromFile:"favicon-16x16-light.png", ToFile:"favicon-16x16-light.png", Type:"modify", IsBinary:false, NewMode:"100644", Hunks:[]pkg.Hunk(nil), BinaryHunk:[]pkg.BinaryPatch(nil)}
