@@ -210,15 +210,15 @@ func (p *parser) tryVisitHeader(diff string) bool {
 		return true
 	}
 	fileHEAD := len(p.diff.FileDiff) - 1
+	if len(diff) == 0 && p.mode == modeHeader {
+		return true
+	}
 	if fileHEAD < 0 {
 		p.err = append(p.err, fmt.Errorf("%w: %s", ErrUnhandled, diff))
 		return true
 	}
 	if p.mode != modeHeader {
 		return false
-	}
-	if len(diff) == 0 {
-		return true
 	}
 	if strings.HasPrefix(diff, "+++ ") || strings.HasPrefix(diff, "--- ") {
 		// ignore -- we're still in the FileDiff and we've already captured the file names
