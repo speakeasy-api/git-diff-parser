@@ -2,66 +2,10 @@ package git_diff_parser
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 )
-
-var ErrPatchConflict = errors.New("patch conflict")
-
-type ConflictLabels struct {
-	Current  string
-	Incoming string
-}
-
-type ApplyOptions struct {
-	ConflictLabels ConflictLabels
-}
-
-// PatchApply holds apply-time configuration and mirrors Git's stateful apply design.
-type PatchApply struct {
-	options ApplyOptions
-}
-
-func DefaultApplyOptions() ApplyOptions {
-	return ApplyOptions{
-		ConflictLabels: ConflictLabels{
-			Current:  "Current",
-			Incoming: "Incoming patch",
-		},
-	}
-}
-
-func NewPatchApply(options ApplyOptions) *PatchApply {
-	return &PatchApply{options: normalizeApplyOptions(options)}
-}
-
-func normalizeApplyOptions(options ApplyOptions) ApplyOptions {
-	defaults := DefaultApplyOptions()
-	if options.ConflictLabels.Current == "" {
-		options.ConflictLabels.Current = defaults.ConflictLabels.Current
-	}
-	if options.ConflictLabels.Incoming == "" {
-		options.ConflictLabels.Incoming = defaults.ConflictLabels.Incoming
-	}
-	return options
-}
-
-type ConflictError struct {
-	ConflictingHunks int
-}
-
-func (e *ConflictError) Error() string {
-	if e.ConflictingHunks == 1 {
-		return "patch conflict in 1 hunk"
-	}
-	return fmt.Sprintf("patch conflict in %d hunks", e.ConflictingHunks)
-}
-
-func (e *ConflictError) Is(target error) bool {
-	return target == ErrPatchConflict
-}
 
 type patchHunk struct {
 	oldStart int
@@ -84,78 +28,33 @@ type fileLine struct {
 	eofMarker  bool
 }
 
+type anchoredFragment struct {
+	offset int
+	lines  []fileLine
+}
+
 var hunkHeaderPattern = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 
 func ApplyFile(pristine, patchData []byte) ([]byte, error) {
-	return NewPatchApply(DefaultApplyOptions()).ApplyFile(pristine, patchData)
+	result, err := ApplyFileWithOptions(pristine, patchData, DefaultApplyOptions())
+	return result.Content, err
+}
+
+func ApplyFileWithOptions(pristine, patchData []byte, options ApplyOptions) (ApplyResult, error) {
+	return NewPatchApply(options).applyFileWithResult(pristine, patchData)
 }
 
 func (p *PatchApply) ApplyFile(pristine, patchData []byte) ([]byte, error) {
-	normalizedPatch := normalizePatchForValidation(patchData)
-	if err := validateSingleFilePatch(normalizedPatch); err != nil {
-		return nil, err
-	}
+	result, err := p.applyFileWithResult(pristine, patchData)
+	return result.Content, err
+}
 
-	lines := splitLinesPreserveNewline(string(normalizedPatch))
-	hunks, err := parseHunks(skipToHunks(lines))
+func (p *PatchApply) applyFileWithResult(pristine, patchData []byte) (ApplyResult, error) {
+	patch, err := p.validateAndParsePatch(patchData)
 	if err != nil {
-		return nil, err
+		return ApplyResult{}, err
 	}
-	if !hunksContainChanges(hunks) {
-		return nil, fmt.Errorf("patch contains no effective changes")
-	}
-
-	sourceLines := splitFileLines(pristine)
-	cursor := 0
-	outLines := make([]fileLine, 0, len(sourceLines))
-	conflicts := 0
-
-	for _, hunk := range hunks {
-		matchIndex, matched := locateHunk(sourceLines, cursor, hunk)
-		if !matched {
-			conflicts++
-
-			conflictStart := hunk.oldStart - 1
-			if conflictStart < cursor {
-				conflictStart = cursor
-			}
-			if conflictStart > len(sourceLines) {
-				conflictStart = len(sourceLines)
-			}
-
-			conflictEnd := conflictStart + hunk.oldCount
-			if conflictEnd > len(sourceLines) {
-				conflictEnd = len(sourceLines)
-			}
-
-			outLines = appendSourceLines(outLines, sourceLines[cursor:conflictStart]...)
-			outLines = p.appendConflict(outLines, sourceLines[conflictStart:conflictEnd], desiredLines(hunk))
-			cursor = conflictEnd
-			continue
-		}
-
-		outLines = appendSourceLines(outLines, sourceLines[cursor:matchIndex]...)
-		cursor = matchIndex
-
-		for _, hunkLine := range hunk.lines {
-			switch hunkLine.kind {
-			case ' ':
-				outLines = append(outLines, fileLine{text: hunkLine.text, hasNewline: hunkLine.hasNewline, eofMarker: hunkLine.newEOF})
-				cursor++
-			case '-':
-				cursor++
-			case '+':
-				outLines = append(outLines, fileLine{text: hunkLine.text, hasNewline: hunkLine.hasNewline, eofMarker: hunkLine.newEOF})
-			}
-		}
-	}
-
-	outLines = appendSourceLines(outLines, sourceLines[cursor:]...)
-	result := joinFileLines(outLines)
-	if conflicts > 0 {
-		return result, &ConflictError{ConflictingHunks: conflicts}
-	}
-	return result, nil
+	return p.newApplySession(pristine).apply(patch)
 }
 
 // ApplyPatch is kept as a compatibility alias.
@@ -273,85 +172,6 @@ func parseHunks(lines []string) ([]patchHunk, error) {
 	return hunks, nil
 }
 
-func locateHunk(sourceLines []fileLine, cursor int, hunk patchHunk) (int, bool) {
-	preferred := hunk.oldStart - 1
-	if hunk.oldCount == 0 {
-		preferred = hunk.oldStart
-	}
-	if preferred < cursor {
-		preferred = cursor
-	}
-
-	if hunk.newCount >= hunk.oldCount && preferred <= len(sourceLines) && postimageMatchesAt(sourceLines, preferred, desiredLines(hunk)) {
-		return 0, false
-	}
-
-	for offset := 0; ; offset++ {
-		candidate := preferred - offset
-		if candidate >= cursor && candidate <= len(sourceLines) && hunkMatchesAt(sourceLines, candidate, hunk) {
-			return candidate, true
-		}
-
-		candidate = preferred + offset
-		if offset > 0 && candidate >= cursor && candidate <= len(sourceLines) && hunkMatchesAt(sourceLines, candidate, hunk) {
-			return candidate, true
-		}
-
-		if preferred-offset < cursor && preferred+offset > len(sourceLines) {
-			break
-		}
-	}
-
-	return 0, false
-}
-
-func hunkMatchesAt(sourceLines []fileLine, start int, hunk patchHunk) bool {
-	if hunk.newCount >= hunk.oldCount && postimageMatchesAt(sourceLines, start, desiredLines(hunk)) {
-		return false
-	}
-
-	cursor := start
-	for _, hunkLine := range hunk.lines {
-		switch hunkLine.kind {
-		case ' ', '-':
-			if cursor >= len(sourceLines) {
-				return false
-			}
-			if sourceLines[cursor].text != hunkLine.text ||
-				sourceLines[cursor].hasNewline != hunkLine.hasNewline ||
-				sourceLines[cursor].eofMarker != hunkLine.oldEOF {
-				return false
-			}
-			cursor++
-		case '+':
-			continue
-		default:
-			return false
-		}
-	}
-
-	return true
-}
-
-func postimageMatchesAt(sourceLines []fileLine, start int, desired []fileLine) bool {
-	if len(desired) == 0 {
-		return false
-	}
-	if start < 0 || start+len(desired) > len(sourceLines) {
-		return false
-	}
-
-	for i := range desired {
-		if sourceLines[start+i].text != desired[i].text ||
-			sourceLines[start+i].hasNewline != desired[i].hasNewline ||
-			sourceLines[start+i].eofMarker != desired[i].eofMarker {
-			return false
-		}
-	}
-
-	return true
-}
-
 func desiredLines(hunk patchHunk) []fileLine {
 	lines := make([]fileLine, 0, len(hunk.lines))
 	for _, line := range hunk.lines {
@@ -360,6 +180,59 @@ func desiredLines(hunk patchHunk) []fileLine {
 		}
 	}
 	return lines
+}
+
+func preimageLines(hunk patchHunk) []fileLine {
+	lines := make([]fileLine, 0, len(hunk.lines))
+	for _, line := range hunk.lines {
+		if line.kind == ' ' || line.kind == '-' {
+			lines = append(lines, fileLine{text: line.text, hasNewline: line.hasNewline, eofMarker: line.oldEOF})
+		}
+	}
+	return lines
+}
+
+func matchAnchoredFragment(source []fileLine, start int, begin, end anchoredFragment) bool {
+	return matchFragment(source, start+begin.offset, begin.lines) &&
+		matchFragment(source, start+end.offset, end.lines)
+}
+
+func splitAnchoredFragment(lines []fileLine) (anchoredFragment, anchoredFragment) {
+	if len(lines) == 0 {
+		return anchoredFragment{}, anchoredFragment{}
+	}
+
+	beginLen := len(lines) / 2
+	if beginLen == 0 {
+		beginLen = 1
+	}
+
+	return anchoredFragment{
+			offset: 0,
+			lines:  lines[:beginLen],
+		}, anchoredFragment{
+			offset: beginLen,
+			lines:  lines[beginLen:],
+		}
+}
+
+func matchFragment(source []fileLine, start int, fragment []fileLine) bool {
+	if len(fragment) == 0 {
+		return true
+	}
+	if start < 0 || start+len(fragment) > len(source) {
+		return false
+	}
+
+	for i := range fragment {
+		if source[start+i].text != fragment[i].text ||
+			source[start+i].hasNewline != fragment[i].hasNewline ||
+			source[start+i].eofMarker != fragment[i].eofMarker {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (p *PatchApply) appendConflict(out []fileLine, ours, theirs []fileLine) []fileLine {
