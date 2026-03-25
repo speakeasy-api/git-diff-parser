@@ -21,6 +21,7 @@ const (
 	PatchsetOperationCreate     PatchsetOperation = "create"
 	PatchsetOperationDelete     PatchsetOperation = "delete"
 	PatchsetOperationRename     PatchsetOperation = "rename"
+	PatchsetOperationCopy       PatchsetOperation = "copy"
 	PatchsetOperationModeChange PatchsetOperation = "mode change"
 	PatchsetOperationBinary     PatchsetOperation = "binary"
 )
@@ -117,16 +118,9 @@ func ParsePatchset(patchData []byte) (Patchset, []error) {
 func (p Patchset) Apply(tree map[string][]byte) (map[string][]byte, error) {
 	out := cloneTree(tree)
 	for _, file := range p.Files {
-		if err := validatePatchsetFile(tree, file.Diff); err != nil {
+		if err := applyPatchsetFile(out, file); err != nil {
 			return nil, err
 		}
-
-		current := out[file.Diff.ToFile]
-		applied, err := ApplyFile(current, file.Patch)
-		if err != nil {
-			return nil, err
-		}
-		out[file.Diff.ToFile] = append([]byte(nil), applied...)
 	}
 	return out, nil
 }
@@ -145,69 +139,6 @@ func cloneTree(tree map[string][]byte) map[string][]byte {
 		out[path] = append([]byte(nil), content...)
 	}
 	return out
-}
-
-func validatePatchsetFile(tree map[string][]byte, fileDiff FileDiff) error {
-	switch {
-	case fileDiff.IsBinary:
-		return &UnsupportedPatchError{
-			Operation: PatchsetOperationBinary,
-			Path:      fileDiff.ToFile,
-		}
-	case fileDiff.FromFile != fileDiff.ToFile:
-		return &UnsupportedPatchError{
-			Operation: PatchsetOperationRename,
-			From:      fileDiff.FromFile,
-			To:        fileDiff.ToFile,
-		}
-	}
-
-	_, exists := tree[fileDiff.ToFile]
-
-	switch fileDiff.Type {
-	case FileDiffTypeAdded:
-		return &UnsupportedPatchError{
-			Operation: PatchsetOperationCreate,
-			Path:      fileDiff.ToFile,
-		}
-	case FileDiffTypeDeleted:
-		return &UnsupportedPatchError{
-			Operation: PatchsetOperationDelete,
-			Path:      fileDiff.FromFile,
-		}
-	}
-
-	if fileDiff.NewMode != "" {
-		if exists {
-			return &UnsupportedPatchError{
-				Operation: PatchsetOperationModeChange,
-				Path:      fileDiff.ToFile,
-			}
-		}
-		return &UnsupportedPatchError{
-			Operation: PatchsetOperationCreate,
-			Path:      fileDiff.ToFile,
-		}
-	}
-
-	if len(fileDiff.Hunks) == 0 {
-		if !exists {
-			return &UnsupportedPatchError{
-				Operation: PatchsetOperationCreate,
-				Path:      fileDiff.ToFile,
-			}
-		}
-		return fmt.Errorf("patch for %q contains no hunks", fileDiff.ToFile)
-	}
-
-	if !exists {
-		return &UnsupportedPatchError{
-			Operation: PatchsetOperationCreate,
-			Path:      fileDiff.ToFile,
-		}
-	}
-
-	return nil
 }
 
 func splitPatchsetChunks(patchData []byte) [][]byte {
