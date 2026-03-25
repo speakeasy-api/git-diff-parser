@@ -16,17 +16,37 @@ type applySession struct {
 
 func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, error) {
 	normalizedPatch := normalizePatchForValidation(patchData)
-	if err := validateSingleFilePatch(normalizedPatch); err != nil {
-		return validatedPatch{}, err
+	parsed, errs := Parse(string(normalizedPatch))
+	if len(errs) > 0 {
+		return validatedPatch{}, fmt.Errorf("unsupported patch syntax: %w", errs[0])
+	}
+	if len(parsed.FileDiff) != 1 {
+		return validatedPatch{}, fmt.Errorf("expected exactly 1 file diff, found %d", len(parsed.FileDiff))
 	}
 
-	lines := splitLinesPreserveNewline(string(normalizedPatch))
-	hunks, err := parseHunks(skipToHunks(lines))
-	if err != nil {
-		return validatedPatch{}, err
+	fileDiff := parsed.FileDiff[0]
+	if fileDiff.IsBinary {
+		return validatedPatch{}, fmt.Errorf("binary patches are not supported")
 	}
-	if !hunksContainChanges(hunks) {
+	if fileDiff.NewMode != "" {
+		return validatedPatch{}, fmt.Errorf("file mode changes are not supported")
+	}
+	if fileDiff.Type == FileDiffTypeAdded || fileDiff.Type == FileDiffTypeDeleted {
+		return validatedPatch{}, fmt.Errorf("patches may only modify existing files")
+	}
+	if len(fileDiff.Hunks) == 0 {
+		return validatedPatch{}, fmt.Errorf("patch contains no hunks")
+	}
+	if fileDiff.RenameFrom != "" || fileDiff.RenameTo != "" || fileDiff.CopyFrom != "" || fileDiff.CopyTo != "" {
+		return validatedPatch{}, fmt.Errorf("unsupported patch syntax: copy and rename headers are not supported")
+	}
+	if !fileDiffHasChanges(fileDiff) {
 		return validatedPatch{}, fmt.Errorf("patch contains no effective changes")
+	}
+
+	hunks := make([]patchHunk, 0, len(fileDiff.Hunks))
+	for _, hunk := range fileDiff.Hunks {
+		hunks = append(hunks, patchHunkFromHunk(hunk))
 	}
 
 	return validatedPatch{hunks: hunks}, nil
@@ -128,6 +148,40 @@ func (s *applySession) findPos(hunk patchHunk) (int, bool) {
 	preimage := preimageLines(hunk)
 	begin, end := splitAnchoredFragment(preimage)
 	return s.findPosWithAnchors(preferred, begin, end)
+}
+
+func patchHunkFromHunk(hunk Hunk) patchHunk {
+	lines := make([]patchLine, 0, len(hunk.Lines))
+	for _, line := range hunk.Lines {
+		lines = append(lines, patchLine{
+			kind:       line.Kind,
+			text:       line.Text,
+			hasNewline: line.HasNewline,
+			oldEOF:     line.OldEOF,
+			newEOF:     line.NewEOF,
+		})
+	}
+
+	return patchHunk{
+		header:   formatPatchHunkHeader(hunk),
+		oldStart: hunk.StartLineNumberOld,
+		oldCount: hunk.CountOld,
+		newCount: hunk.CountNew,
+		lines:    lines,
+	}
+}
+
+func formatPatchHunkHeader(hunk Hunk) string {
+	oldRange := formatPatchHunkRange(hunk.StartLineNumberOld, hunk.CountOld)
+	newRange := formatPatchHunkRange(hunk.StartLineNumberNew, hunk.CountNew)
+	return fmt.Sprintf("@@ -%s +%s @@", oldRange, newRange)
+}
+
+func formatPatchHunkRange(start, count int) string {
+	if count == 1 {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d,%d", start, count)
 }
 
 func (s *applySession) findPosWithAnchors(preferred int, begin, end anchoredFragment) (int, bool) {

@@ -160,7 +160,10 @@ func (p *parser) VisitLine(diff string) {
 
 	if strings.HasPrefix(line, `\ No newline at end of file`) {
 		if n := len(hunk.Lines); n > 0 {
-			hunk.Lines[n-1].HasNewline = false
+			hunk.Lines[n-1].MarkNoNewline()
+		} else {
+			p.err = append(p.err, fmt.Errorf("unexpected no-newline marker without a preceding patch line"))
+			return
 		}
 		hunk.ChangeList = append(hunk.ChangeList, ContentChange{
 			Type: ContentChangeTypeNOOP,
@@ -170,16 +173,22 @@ func (p *parser) VisitLine(diff string) {
 		return
 	}
 
-	hunk.ChangeList = append(hunk.ChangeList, ContentChange{
-		Type: ContentChangeTypeNOOP,
-		From: line,
-		To:   line,
-	})
+	if line == "" {
+		hunk.ChangeList = append(hunk.ChangeList, ContentChange{
+			Type: ContentChangeTypeNOOP,
+			From: line,
+			To:   line,
+		})
+		return
+	}
+
+	p.err = append(p.err, fmt.Errorf("unexpected hunk line %q", line))
 }
 
 func (p *parser) tryVisitHeader(diff string) bool {
 	// format: "diff --git a/README.md b/README.md"
 	if strings.HasPrefix(diff, "diff ") {
+		p.finalizeCurrentHunk()
 		p.diff.FileDiff = append(p.diff.FileDiff, p.parseDiffLine(diff))
 		p.mode = modeHeader
 		return true
@@ -348,6 +357,7 @@ func (p *parser) tryVisitHunkHeader(diff string) bool {
 		return false
 	}
 	if strings.HasPrefix(diff, "@@") {
+		p.finalizeCurrentHunk()
 		hunk, err := NewHunk(diff)
 		if err != nil {
 			p.err = append(p.err, err)
@@ -357,6 +367,18 @@ func (p *parser) tryVisitHunkHeader(diff string) bool {
 		return true
 	}
 	return false
+}
+
+func (p *parser) finalizeCurrentHunk() {
+	if len(p.diff.FileDiff) == 0 {
+		return
+	}
+	fileHEAD := len(p.diff.FileDiff) - 1
+	hunks := p.diff.FileDiff[fileHEAD].Hunks
+	if len(hunks) == 0 {
+		return
+	}
+	p.diff.FileDiff[fileHEAD].Hunks[len(hunks)-1].MarkEOFMarkers()
 }
 
 func (p *parser) parseDiffLine(line string) FileDiff {
@@ -413,6 +435,7 @@ func Parse(diff string) (Diff, []error) {
 	if strings.HasSuffix(diff, "\n") {
 		p.VisitLine("")
 	}
+	p.finalizeCurrentHunk()
 	return p.diff, p.err
 }
 

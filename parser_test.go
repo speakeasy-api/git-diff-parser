@@ -146,6 +146,8 @@ new mode 100755
 	assert.Equal(t, byte(' '), hunk.Lines[2].Kind)
 	assert.Equal(t, "second", hunk.Lines[2].Text)
 	assert.False(t, hunk.Lines[2].HasNewline)
+	assert.False(t, hunk.Lines[2].OldEOF)
+	assert.False(t, hunk.Lines[2].NewEOF)
 }
 
 func MatchMessageSnapshot(t *testing.T, snapshotName string, content string) {
