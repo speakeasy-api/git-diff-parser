@@ -59,6 +59,9 @@ func (changes *ChangeList) IsSignificant() bool {
 func NewHunk(line string) (Hunk, error) {
 	namedHunkRegex := regexp.MustCompile(`(?m)^@@ -(?P<start_old>\d+),?(?P<count_old>\d+)? \+(?P<start_new>\d+),?(?P<count_new>\d+)? @@`)
 	match := namedHunkRegex.FindStringSubmatch(line)
+	if len(match) == 0 {
+		return Hunk{}, fmt.Errorf("invalid hunk header: %q", line)
+	}
 	result := make(map[string]string)
 	for i, name := range namedHunkRegex.SubexpNames() {
 		if i != 0 && name != "" {
