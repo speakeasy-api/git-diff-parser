@@ -1,0 +1,7 @@
+{
+  "skipLibrary": true,
+  "srcFiles": {},
+  "outFiles": {
+    "new.txt": "alpha\nbravo\n"
+  }
+}

@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	git_diff_parser "github.com/speakeasy-api/git-diff-parser"
@@ -18,9 +20,15 @@ import (
 )
 
 type parityFixture struct {
-	GitArgs        []string `json:"gitArgs"`
-	ExpectConflict bool     `json:"expectConflict"`
-	CheckReject    bool     `json:"checkReject"`
+	GitArgs        []string          `json:"gitArgs"`
+	ExpectConflict bool              `json:"expectConflict"`
+	CheckReject    bool              `json:"checkReject"`
+	SkipLibrary    bool              `json:"skipLibrary"`
+	ExpectGitError bool              `json:"expectGitError"`
+	SrcFiles       map[string]string `json:"srcFiles"`
+	OutFiles       map[string]string `json:"outFiles"`
+	SrcModes       map[string]string `json:"srcModes"`
+	OutModes       map[string]string `json:"outModes"`
 }
 
 type parityCase struct {
@@ -28,8 +36,17 @@ type parityCase struct {
 	src     []byte
 	patch   []byte
 	out     []byte
+	srcTree parityTree
+	outTree parityTree
 	fixture parityFixture
 }
+
+type parityFile struct {
+	content []byte
+	mode    fs.FileMode
+}
+
+type parityTree map[string]parityFile
 
 func TestApplyFile_ParityCorpus(t *testing.T) {
 	if testing.Short() {
@@ -47,6 +64,16 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 			t.Parallel()
 
 			oracles := runGitApplyOracles(t, tc)
+			if tc.fixture.SkipLibrary {
+				assertParityTree(t, tc.outTree, oracles.tree)
+				if tc.fixture.ExpectGitError {
+					require.Error(t, oracles.exitErr)
+				} else {
+					require.NoError(t, oracles.exitErr)
+				}
+				return
+			}
+
 			applied, err := git_diff_parser.ApplyFile(tc.src, tc.patch)
 
 			if tc.fixture.ExpectConflict {
@@ -65,12 +92,14 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 						assert.Contains(t, string(applied), string(line))
 					}
 				}
+				assertParityTree(t, tc.srcTree, oracles.tree)
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, oracles.applied, applied)
 				if len(tc.out) > 0 {
 					assert.Equal(t, tc.out, applied)
 				}
+				assertParityTree(t, tc.outTree, oracles.tree)
 			}
 
 			if tc.fixture.CheckReject {
@@ -89,6 +118,7 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 
 type gitApplyOracle struct {
 	applied  []byte
+	tree     parityTree
 	rej      []byte
 	rejected bool
 	exitErr  error
@@ -98,7 +128,7 @@ func runGitApplyOracles(t *testing.T, tc parityCase, extraArgs ...string) gitApp
 	t.Helper()
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), tc.src, 0o600))
+	writeParityTree(t, dir, tc.srcTree)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "patch.diff"), tc.patch, 0o600))
 
 	args := []string{"apply", "--whitespace=nowarn"}
@@ -123,13 +153,16 @@ func runGitApplyOracles(t *testing.T, tc parityCase, extraArgs ...string) gitApp
 	}
 
 	applied, readErr := os.ReadFile(filepath.Join(dir, "file.txt"))
-	require.NoError(t, readErr)
-	oracles.applied = applied
+	if readErr == nil {
+		oracles.applied = applied
+	}
 
 	rej, rejErr := os.ReadFile(filepath.Join(dir, "file.txt.rej"))
 	if rejErr == nil {
 		oracles.rej = rej
 	}
+
+	oracles.tree = collectParityTree(t, dir)
 
 	if len(output) > 0 && err == nil {
 		// git apply is quiet here; keep the command output surfaced only if it was unexpected.
@@ -154,11 +187,14 @@ func loadParityCases(t *testing.T) []parityCase {
 
 		dir := filepath.Join(root, entry.Name())
 		fixture := readParityFixture(t, filepath.Join(dir, "fixture.json"))
+		srcTree, src, outTree, out := readParityTrees(t, dir, fixture)
 		cases = append(cases, parityCase{
 			name:    entry.Name(),
-			src:     readParityFile(t, filepath.Join(dir, "src")),
+			src:     src,
 			patch:   readParityFile(t, filepath.Join(dir, "patch")),
-			out:     readParityFile(t, filepath.Join(dir, "out")),
+			out:     out,
+			srcTree: srcTree,
+			outTree: outTree,
 			fixture: fixture,
 		})
 	}
@@ -185,6 +221,140 @@ func readParityFile(t *testing.T, path string) []byte {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	return data
+}
+
+func readParityFileMaybe(t *testing.T, path string) []byte {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	require.NoError(t, err)
+	return data
+}
+
+func readParityTrees(t *testing.T, dir string, fixture parityFixture) (parityTree, []byte, parityTree, []byte) {
+	t.Helper()
+
+	srcTree := loadParityTree(t, filepath.Join(dir, "src"), fixture.SrcFiles, fixture.SrcModes)
+	outTree := loadParityTree(t, filepath.Join(dir, "out"), fixture.OutFiles, fixture.OutModes)
+	return srcTree, treeBytes(srcTree), outTree, treeBytes(outTree)
+}
+
+func loadParityTree(t *testing.T, legacyPath string, files map[string]string, modes map[string]string) parityTree {
+	t.Helper()
+
+	if len(files) > 0 {
+		tree := make(parityTree, len(files))
+		for path, content := range files {
+			tree[path] = parityFile{
+				content: []byte(content),
+				mode:    parseParityMode(modes[path]),
+			}
+		}
+		return tree
+	}
+
+	legacy := readParityFileMaybe(t, legacyPath)
+	if legacy == nil {
+		return nil
+	}
+	return parityTree{
+		"file.txt": {content: legacy},
+	}
+}
+
+func parseParityMode(raw string) fs.FileMode {
+	if raw == "" {
+		return 0
+	}
+	if len(raw) >= 3 {
+		raw = raw[len(raw)-3:]
+	}
+	switch raw {
+	case "644":
+		return 0o644
+	case "755":
+		return 0o755
+	default:
+		return 0
+	}
+}
+
+func treeBytes(tree parityTree) []byte {
+	if len(tree) != 1 {
+		return nil
+	}
+	file, ok := tree["file.txt"]
+	if !ok {
+		return nil
+	}
+	return file.content
+}
+
+func writeParityTree(t *testing.T, root string, tree parityTree) {
+	t.Helper()
+
+	for path, file := range tree {
+		fullPath := filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+		require.NoError(t, os.WriteFile(fullPath, file.content, 0o600))
+		if file.mode != 0 {
+			require.NoError(t, os.Chmod(fullPath, file.mode))
+		}
+	}
+}
+
+func collectParityTree(t *testing.T, root string) parityTree {
+	t.Helper()
+
+	tree := make(parityTree)
+	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		require.NoError(t, err)
+		if path == root || d.IsDir() {
+			return nil
+		}
+		base := filepath.Base(path)
+		if base == "patch.diff" || strings.HasSuffix(base, ".rej") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		require.NoError(t, err)
+		content, err := os.ReadFile(path)
+		require.NoError(t, err)
+		info, err := d.Info()
+		require.NoError(t, err)
+		tree[filepath.ToSlash(rel)] = parityFile{
+			content: content,
+			mode:    info.Mode().Perm(),
+		}
+		return nil
+	}))
+	return tree
+}
+
+func assertParityTree(t *testing.T, want, got parityTree) {
+	t.Helper()
+
+	if len(want) == 0 {
+		assert.Len(t, got, 0)
+		return
+	}
+
+	require.Len(t, got, len(want))
+	for path, expected := range want {
+		actual, ok := got[path]
+		require.True(t, ok, "missing file %s", path)
+		assert.Equal(t, expected.content, actual.content, "content mismatch for %s", path)
+		if expected.mode != 0 {
+			assert.Equal(t, expected.mode, actual.mode, "mode mismatch for %s", path)
+		}
+	}
+	for path := range got {
+		_, ok := want[path]
+		assert.True(t, ok, "unexpected file %s", path)
+	}
 }
 
 func requireGitBinary(t *testing.T) {

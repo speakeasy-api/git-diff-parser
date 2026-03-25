@@ -1,0 +1,7 @@
+{
+  "skipLibrary": true,
+  "srcFiles": {
+    "gone.txt": "alpha\nbravo\n"
+  },
+  "outFiles": {}
+}

@@ -1,0 +1,15 @@
+{
+  "skipLibrary": true,
+  "srcFiles": {
+    "script.sh": "echo hi\n"
+  },
+  "srcModes": {
+    "script.sh": "100644"
+  },
+  "outFiles": {
+    "script.sh": "echo hi\n"
+  },
+  "outModes": {
+    "script.sh": "100755"
+  }
+}
