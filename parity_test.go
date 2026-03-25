@@ -37,6 +37,7 @@ type parityCase struct {
 	src     []byte
 	patch   []byte
 	out     []byte
+	rej     []byte
 	srcTree parityTree
 	outTree parityTree
 	fixture parityFixture
@@ -112,7 +113,11 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 				require.ErrorAs(t, rejectErr, &applyErr)
 				require.NotEqual(t, tc.src, rejectOracles.applied)
 				assert.Equal(t, tc.src, rejectResult.Content)
-				assert.Equal(t, rejectOracles.rej, rejectResult.Reject)
+				if len(tc.rej) > 0 {
+					assert.Equal(t, tc.rej, trimGitRejectHeader(rejectResult.Reject))
+				} else {
+					assert.Equal(t, rejectOracles.rej, rejectResult.Reject)
+				}
 				if len(tc.out) > 0 {
 					assert.Equal(t, tc.out, rejectOracles.applied)
 				}
@@ -128,11 +133,28 @@ func runLibraryApply(t *testing.T, tc parityCase, rejectMode bool) (git_diff_par
 
 	options := git_diff_parser.DefaultApplyOptions()
 	options.IgnoreWhitespace = tc.fixture.IgnoreWhitespace
+	options.Reverse = fixtureHasGitArg(tc.fixture, "--reverse")
 	if rejectMode {
 		options.Mode = git_diff_parser.ApplyModeApply
 	}
 
 	return git_diff_parser.ApplyFileWithOptions(tc.src, tc.patch, options)
+}
+
+func trimGitRejectHeader(rej []byte) []byte {
+	if idx := bytes.IndexByte(rej, '\n'); idx >= 0 {
+		return rej[idx+1:]
+	}
+	return rej
+}
+
+func fixtureHasGitArg(fixture parityFixture, arg string) bool {
+	for _, candidate := range fixture.GitArgs {
+		if candidate == arg {
+			return true
+		}
+	}
+	return false
 }
 
 type gitApplyOracle struct {
@@ -212,6 +234,7 @@ func loadParityCases(t *testing.T) []parityCase {
 			src:     src,
 			patch:   readParityFile(t, filepath.Join(dir, "patch")),
 			out:     out,
+			rej:     readParityFileMaybe(t, filepath.Join(dir, "rej")),
 			srcTree: srcTree,
 			outTree: outTree,
 			fixture: fixture,

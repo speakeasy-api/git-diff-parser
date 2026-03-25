@@ -11,6 +11,7 @@ type patchHunk struct {
 	header   string
 	oldStart int
 	oldCount int
+	newStart int
 	newCount int
 	lines    []patchLine
 }
@@ -153,7 +154,7 @@ func parseHunks(lines []string) ([]patchHunk, error) {
 			return nil, fmt.Errorf("unexpected patch line %q", line)
 		}
 
-		oldStart, oldCount, newCount, err := parseHunkHeader(line)
+		oldStart, oldCount, newStart, newCount, err := parseHunkHeader(line)
 		if err != nil {
 			return nil, err
 		}
@@ -186,6 +187,7 @@ func parseHunks(lines []string) ([]patchHunk, error) {
 			header:   line,
 			oldStart: oldStart,
 			oldCount: oldCount,
+			newStart: newStart,
 			newCount: newCount,
 			lines:    hunkLines,
 		})
@@ -284,34 +286,39 @@ func ensureTrailingNewline(lines []fileLine) []fileLine {
 	return lines
 }
 
-func parseHunkHeader(header string) (int, int, int, error) {
+func parseHunkHeader(header string) (int, int, int, int, error) {
 	matches := hunkHeaderPattern.FindStringSubmatch(header)
 	if len(matches) == 0 {
-		return 0, 0, 0, fmt.Errorf("invalid hunk header %q", header)
+		return 0, 0, 0, 0, fmt.Errorf("invalid hunk header %q", header)
 	}
 
 	oldStart, err := parseNumber(matches[1])
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, 0, err
 	}
 
 	oldCount := 1
 	if matches[2] != "" {
 		oldCount, err = parseNumber(matches[2])
 		if err != nil {
-			return 0, 0, 0, err
+			return 0, 0, 0, 0, err
 		}
+	}
+
+	newStart, err := parseNumber(matches[3])
+	if err != nil {
+		return 0, 0, 0, 0, err
 	}
 
 	newCount := 1
 	if matches[4] != "" {
 		newCount, err = parseNumber(matches[4])
 		if err != nil {
-			return 0, 0, 0, err
+			return 0, 0, 0, 0, err
 		}
 	}
 
-	return oldStart, oldCount, newCount, nil
+	return oldStart, oldCount, newStart, newCount, nil
 }
 
 func markEOFMarkers(lines []patchLine, oldCount, newCount int) {

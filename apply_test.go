@@ -540,6 +540,72 @@ func TestApplyFileWithOptions_IgnoreWhitespaceAppliesThroughContextDrift(t *test
 	assert.Equal(t, 0, applied.MergeConflicts)
 }
 
+func TestApplyFileWithOptions_ReverseAppliesPatchBackwards(t *testing.T) {
+	t.Parallel()
+
+	current := []byte("z\nb\n")
+	patchData := []byte(`diff --git a/file.txt b/file.txt
+--- a/file.txt
++++ b/file.txt
+@@ -1,2 +1,2 @@
+-a
++z
+ b
+`)
+
+	applied, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
+		Reverse: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []byte("a\nb\n"), applied.Content)
+}
+
+func TestApplyFileWithOptions_UnidiffZeroIsAccepted(t *testing.T) {
+	t.Parallel()
+
+	current := []byte("alpha\nbeta\ngamma\n")
+	patchData := []byte(`diff --git a/file.txt b/file.txt
+--- a/file.txt
++++ b/file.txt
+@@ -2 +1,0 @@
+-beta
+`)
+
+	baseline, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, []byte("alpha\ngamma\n"), baseline.Content)
+
+	applied, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
+		UnidiffZero: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, baseline.Content, applied.Content)
+}
+
+func TestApplyFileWithOptions_RecountRebuildsHunkCounts(t *testing.T) {
+	t.Parallel()
+
+	current := []byte("alpha\nbeta\ngamma\n")
+	patchData := []byte(`diff --git a/file.txt b/file.txt
+--- a/file.txt
++++ b/file.txt
+@@ -2,2 +2,2 @@
+-beta
+`)
+
+	_, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
+		UnidiffZero: true,
+	})
+	require.Error(t, err)
+
+	applied, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
+		UnidiffZero: true,
+		Recount:     true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []byte("alpha\ngamma\n"), applied.Content)
+}
+
 func TestApplyFile_RejectsAlreadyAppliedBeginningAndEndingPatches(t *testing.T) {
 	t.Parallel()
 
