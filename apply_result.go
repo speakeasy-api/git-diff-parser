@@ -11,8 +11,21 @@ var ErrPatchConflict = errors.New("patch conflict")
 // while attempting to apply it.
 type ApplyResult struct {
 	Content        []byte
+	Reject         []byte
 	DirectMisses   int
 	MergeConflicts int
+}
+
+type applyOutcome struct {
+	content   []fileLine
+	conflicts []applyConflict
+}
+
+type applyConflict struct {
+	offset int
+	hunk   patchHunk
+	ours   []fileLine
+	theirs []fileLine
 }
 
 // ApplyError reports the aggregate apply outcome.

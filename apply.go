@@ -8,6 +8,7 @@ import (
 )
 
 type patchHunk struct {
+	header   string
 	oldStart int
 	oldCount int
 	newCount int
@@ -54,7 +55,24 @@ func (p *PatchApply) applyFileWithResult(pristine, patchData []byte) (ApplyResul
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	return p.newApplySession(pristine).apply(patch)
+	outcome, err := p.newApplySession(pristine).apply(patch)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+
+	result := renderApplyResult(pristine, outcome, p.options)
+	if len(outcome.conflicts) == 0 {
+		return result, nil
+	}
+	if p.options.Mode == ApplyModeMerge {
+		return result, &ApplyError{
+			MergeConflicts:   len(outcome.conflicts),
+			ConflictingHunks: len(outcome.conflicts),
+		}
+	}
+	return result, &ApplyError{
+		DirectMisses: len(outcome.conflicts),
+	}
 }
 
 // ApplyPatch is kept as a compatibility alias.
@@ -165,6 +183,7 @@ func parseHunks(lines []string) ([]patchHunk, error) {
 		markEOFMarkers(hunkLines, oldCount, newCount)
 
 		hunks = append(hunks, patchHunk{
+			header:   line,
 			oldStart: oldStart,
 			oldCount: oldCount,
 			newCount: newCount,
@@ -251,18 +270,6 @@ func lineMatches(left, right fileLine, ignoreWhitespace bool) bool {
 
 func normalizeWhitespace(text string) string {
 	return strings.Join(strings.Fields(text), " ")
-}
-
-func (p *PatchApply) appendConflict(out []fileLine, ours, theirs []fileLine) []fileLine {
-	labels := p.options.ConflictLabels
-	out = append(out, fileLine{text: "<<<<<<< " + labels.Current, hasNewline: true})
-	out = appendSourceLines(out, ours...)
-	out = ensureTrailingNewline(out)
-	out = append(out, fileLine{text: "=======", hasNewline: true})
-	out = appendSourceLines(out, theirs...)
-	out = ensureTrailingNewline(out)
-	out = append(out, fileLine{text: ">>>>>>> " + labels.Incoming, hasNewline: true})
-	return out
 }
 
 func appendSourceLines(dst []fileLine, src ...fileLine) []fileLine {
