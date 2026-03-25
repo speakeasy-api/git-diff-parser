@@ -130,15 +130,14 @@ func applyPatchsetContent(pristine []byte, file PatchsetFile) ([]byte, error) {
 		hunks = append(hunks, patchHunkFromHunk(hunk))
 	}
 
-	outcome, err := NewPatchApply(ApplyOptions{Mode: ApplyModeApply}).newApplySession(pristine).apply(validatedPatch{hunks: hunks})
+	result, err := NewPatchApply(ApplyOptions{Mode: ApplyModeApply}).applyValidatedPatch(pristine, validatedPatch{
+		rejectHead: formatRejectHeader(file.Diff),
+		hunks:      hunks,
+	})
 	if err != nil {
 		return nil, err
 	}
-	if len(outcome.conflicts) > 0 {
-		return nil, &ApplyError{DirectMisses: len(outcome.conflicts)}
-	}
 
-	result := renderApplyResult(pristine, outcome, ApplyOptions{Mode: ApplyModeApply})
 	return append([]byte(nil), result.Content...), nil
 }
 

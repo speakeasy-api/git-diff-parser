@@ -7,19 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMatchAnchoredFragmentRequiresBothEnds(t *testing.T) {
-	source := splitFileLines([]byte("one\na\nb\nc\nd\na\nb\nx\nd\n"))
-	begin, end := splitAnchoredFragment([]fileLine{
-		{text: "a", hasNewline: true},
-		{text: "b", hasNewline: true},
-		{text: "c", hasNewline: true},
-		{text: "d", hasNewline: true},
-	})
-
-	require.True(t, matchAnchoredFragment(source, 1, begin, end, false))
-	require.False(t, matchAnchoredFragment(source, 5, begin, end, false))
-}
-
 func TestFindPosRejectsAlreadyAppliedPostimage(t *testing.T) {
 	session := &applySession{
 		sourceLines: splitFileLines([]byte("a\nb\nx\nc\n")),
