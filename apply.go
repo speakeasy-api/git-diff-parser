@@ -85,6 +85,9 @@ func validateSingleFilePatch(patchData []byte) error {
 	if len(fileDiff.Hunks) == 0 {
 		return fmt.Errorf("patch contains no hunks")
 	}
+	if fileDiff.RenameFrom != "" || fileDiff.RenameTo != "" || fileDiff.CopyFrom != "" || fileDiff.CopyTo != "" {
+		return fmt.Errorf("unsupported patch syntax: copy and rename headers are not supported")
+	}
 
 	return nil
 }

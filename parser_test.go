@@ -91,6 +91,63 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseCapturesFileMetadataAndHunkLines(t *testing.T) {
+	t.Parallel()
+
+	diff := `diff --git a/src.txt b/dst.txt
+similarity index 92%
+rename from src.txt
+rename to dst.txt
+index 1234567..89abcde 100755
+old mode 100644
+new mode 100755
+--- a/src.txt
++++ b/dst.txt
+@@ -1,2 +1,2 @@
+-old
++new
+ second
+\ No newline at end of file
+`
+
+	parsed, errs := git_diff_parser.Parse(diff)
+	require.Empty(t, errs)
+	require.Len(t, parsed.FileDiff, 1)
+
+	fileDiff := parsed.FileDiff[0]
+	assert.Equal(t, "src.txt", fileDiff.FromFile)
+	assert.Equal(t, "dst.txt", fileDiff.ToFile)
+	assert.Equal(t, git_diff_parser.FileDiffTypeModified, fileDiff.Type)
+	assert.Equal(t, "1234567", fileDiff.IndexOld)
+	assert.Equal(t, "89abcde", fileDiff.IndexNew)
+	assert.Equal(t, "100755", fileDiff.IndexMode)
+	assert.Equal(t, "100644", fileDiff.OldMode)
+	assert.Equal(t, "100755", fileDiff.NewMode)
+	assert.Equal(t, 92, fileDiff.SimilarityIndex)
+	assert.Equal(t, "src.txt", fileDiff.RenameFrom)
+	assert.Equal(t, "dst.txt", fileDiff.RenameTo)
+
+	require.Len(t, fileDiff.Hunks, 1)
+	hunk := fileDiff.Hunks[0]
+	assert.Equal(t, 1, hunk.StartLineNumberOld)
+	assert.Equal(t, 1, hunk.StartLineNumberNew)
+	assert.Equal(t, 2, hunk.CountOld)
+	assert.Equal(t, 2, hunk.CountNew)
+	require.Len(t, hunk.Lines, 3)
+
+	assert.Equal(t, byte('-'), hunk.Lines[0].Kind)
+	assert.Equal(t, "old", hunk.Lines[0].Text)
+	assert.True(t, hunk.Lines[0].HasNewline)
+
+	assert.Equal(t, byte('+'), hunk.Lines[1].Kind)
+	assert.Equal(t, "new", hunk.Lines[1].Text)
+	assert.True(t, hunk.Lines[1].HasNewline)
+
+	assert.Equal(t, byte(' '), hunk.Lines[2].Kind)
+	assert.Equal(t, "second", hunk.Lines[2].Text)
+	assert.False(t, hunk.Lines[2].HasNewline)
+}
+
 func MatchMessageSnapshot(t *testing.T, snapshotName string, content string) {
 	t.Helper()
 	_, filename, _, ok := runtime.Caller(0)
