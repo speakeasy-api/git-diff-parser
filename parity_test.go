@@ -20,15 +20,16 @@ import (
 )
 
 type parityFixture struct {
-	GitArgs        []string          `json:"gitArgs"`
-	ExpectConflict bool              `json:"expectConflict"`
-	CheckReject    bool              `json:"checkReject"`
-	SkipLibrary    bool              `json:"skipLibrary"`
-	ExpectGitError bool              `json:"expectGitError"`
-	SrcFiles       map[string]string `json:"srcFiles"`
-	OutFiles       map[string]string `json:"outFiles"`
-	SrcModes       map[string]string `json:"srcModes"`
-	OutModes       map[string]string `json:"outModes"`
+	GitArgs          []string          `json:"gitArgs"`
+	ExpectConflict   bool              `json:"expectConflict"`
+	CheckReject      bool              `json:"checkReject"`
+	IgnoreWhitespace bool              `json:"ignoreWhitespace"`
+	SkipLibrary      bool              `json:"skipLibrary"`
+	ExpectGitError   bool              `json:"expectGitError"`
+	SrcFiles         map[string]string `json:"srcFiles"`
+	OutFiles         map[string]string `json:"outFiles"`
+	SrcModes         map[string]string `json:"srcModes"`
+	OutModes         map[string]string `json:"outModes"`
 }
 
 type parityCase struct {
@@ -74,30 +75,30 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 				return
 			}
 
-			applied, err := git_diff_parser.ApplyFile(tc.src, tc.patch)
+			mergeResult, mergeErr := runLibraryApply(t, tc, false)
 
 			if tc.fixture.ExpectConflict {
-				require.Error(t, err)
+				require.Error(t, mergeErr)
 				var conflictErr *git_diff_parser.ConflictError
-				require.ErrorAs(t, err, &conflictErr)
-				assert.True(t, errors.Is(err, git_diff_parser.ErrPatchConflict))
+				require.ErrorAs(t, mergeErr, &conflictErr)
+				assert.True(t, errors.Is(mergeErr, git_diff_parser.ErrPatchConflict))
 				assert.Equal(t, tc.src, oracles.applied)
-				assert.Contains(t, string(applied), "<<<<<<< Current")
-				assert.Contains(t, string(applied), ">>>>>>> Incoming patch")
+				assert.Contains(t, string(mergeResult.Content), "<<<<<<< Current")
+				assert.Contains(t, string(mergeResult.Content), ">>>>>>> Incoming patch")
 				if len(tc.out) > 0 {
 					for _, line := range bytes.Split(bytes.TrimSpace(tc.out), []byte("\n")) {
 						if len(line) == 0 {
 							continue
 						}
-						assert.Contains(t, string(applied), string(line))
+						assert.Contains(t, string(mergeResult.Content), string(line))
 					}
 				}
 				assertParityTree(t, tc.srcTree, oracles.tree)
 			} else {
-				require.NoError(t, err)
-				require.Equal(t, oracles.applied, applied)
+				require.NoError(t, mergeErr)
+				require.Equal(t, oracles.applied, mergeResult.Content)
 				if len(tc.out) > 0 {
-					assert.Equal(t, tc.out, applied)
+					assert.Equal(t, tc.out, mergeResult.Content)
 				}
 				assertParityTree(t, tc.outTree, oracles.tree)
 			}
@@ -105,15 +106,33 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 			if tc.fixture.CheckReject {
 				rejectOracles := runGitApplyOracles(t, tc, "--reject")
 				require.True(t, rejectOracles.rejected)
+				rejectResult, rejectErr := runLibraryApply(t, tc, true)
+				require.Error(t, rejectErr)
+				var applyErr *git_diff_parser.ApplyError
+				require.ErrorAs(t, rejectErr, &applyErr)
 				require.NotEqual(t, tc.src, rejectOracles.applied)
+				assert.Equal(t, tc.src, rejectResult.Content)
+				assert.Equal(t, rejectOracles.rej, rejectResult.Reject)
 				if len(tc.out) > 0 {
 					assert.Equal(t, tc.out, rejectOracles.applied)
 				}
 				require.NotEmpty(t, rejectOracles.rej)
-				assert.Contains(t, string(rejectOracles.rej), "line5")
+				assert.Contains(t, string(rejectOracles.rej), "rejected hunks")
 			}
 		})
 	}
+}
+
+func runLibraryApply(t *testing.T, tc parityCase, rejectMode bool) (git_diff_parser.ApplyResult, error) {
+	t.Helper()
+
+	options := git_diff_parser.DefaultApplyOptions()
+	options.IgnoreWhitespace = tc.fixture.IgnoreWhitespace
+	if rejectMode {
+		options.Mode = git_diff_parser.ApplyModeApply
+	}
+
+	return git_diff_parser.ApplyFileWithOptions(tc.src, tc.patch, options)
 }
 
 type gitApplyOracle struct {

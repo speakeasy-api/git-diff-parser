@@ -3,7 +3,8 @@ package git_diff_parser
 import "fmt"
 
 type validatedPatch struct {
-	hunks []patchHunk
+	rejectHead string
+	hunks      []patchHunk
 }
 
 type applySession struct {
@@ -12,6 +13,7 @@ type applySession struct {
 	image       []fileLine
 	cursor      int
 	conflicts   []applyConflict
+	rejectHead  string
 }
 
 func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, error) {
@@ -49,7 +51,10 @@ func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, er
 		hunks = append(hunks, patchHunkFromHunk(hunk))
 	}
 
-	return validatedPatch{hunks: hunks}, nil
+	return validatedPatch{
+		rejectHead: formatRejectHeader(fileDiff),
+		hunks:      hunks,
+	}, nil
 }
 
 func (p *PatchApply) newApplySession(pristine []byte) *applySession {
@@ -62,6 +67,8 @@ func (p *PatchApply) newApplySession(pristine []byte) *applySession {
 }
 
 func (s *applySession) apply(patch validatedPatch) (applyOutcome, error) {
+	s.rejectHead = patch.rejectHead
+
 	for _, hunk := range patch.hunks {
 		s.applyHunk(hunk)
 	}
@@ -70,6 +77,7 @@ func (s *applySession) apply(patch validatedPatch) (applyOutcome, error) {
 	return applyOutcome{
 		content:   append([]fileLine(nil), s.image...),
 		conflicts: append([]applyConflict(nil), s.conflicts...),
+		rejectHead: s.rejectHead,
 	}, nil
 }
 
@@ -169,6 +177,14 @@ func patchHunkFromHunk(hunk Hunk) patchHunk {
 		newCount: hunk.CountNew,
 		lines:    lines,
 	}
+}
+
+func formatRejectHeader(fileDiff FileDiff) string {
+	path := firstNonEmpty(fileDiff.ToFile, fileDiff.FromFile)
+	if path == "" {
+		return ""
+	}
+	return "diff a/" + path + " b/" + path + "\t(rejected hunks)"
 }
 
 func formatPatchHunkHeader(hunk Hunk) string {
