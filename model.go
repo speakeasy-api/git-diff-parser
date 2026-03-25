@@ -1,6 +1,9 @@
 package git_diff_parser
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type ContentChangeType string
 
@@ -27,6 +30,33 @@ type HunkLine struct {
 	Kind       byte   `json:"kind"`
 	Text       string `json:"text"`
 	HasNewline bool   `json:"has_newline"`
+	OldEOF     bool   `json:"old_eof,omitempty"`
+	NewEOF     bool   `json:"new_eof,omitempty"`
+}
+
+func (l *HunkLine) MarkNoNewline() {
+	l.HasNewline = false
+}
+
+func (h *Hunk) MarkEOFMarkers() {
+	oldSeen := 0
+	newSeen := 0
+
+	for i := range h.Lines {
+		line := &h.Lines[i]
+		if line.Kind == ' ' || line.Kind == '-' {
+			oldSeen++
+		}
+		if line.Kind == ' ' || line.Kind == '+' {
+			newSeen++
+		}
+		if !line.HasNewline || strings.TrimSuffix(line.Text, "\r") != "" {
+			continue
+		}
+
+		line.OldEOF = (line.Kind == ' ' || line.Kind == '-') && oldSeen == h.CountOld
+		line.NewEOF = (line.Kind == ' ' || line.Kind == '+') && newSeen == h.CountNew
+	}
 }
 
 // Hunk is a line that starts with @@.
