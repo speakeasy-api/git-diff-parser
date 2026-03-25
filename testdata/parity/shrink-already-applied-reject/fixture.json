@@ -1,0 +1,10 @@
+{
+  "skipLibrary": true,
+  "expectGitError": true,
+  "srcFiles": {
+    "file.txt": "alpha\ngamma\n"
+  },
+  "outFiles": {
+    "file.txt": "alpha\ngamma\n"
+  }
+}

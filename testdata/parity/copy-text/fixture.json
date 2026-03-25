@@ -1,0 +1,10 @@
+{
+  "skipLibrary": true,
+  "srcFiles": {
+    "source.txt": "alpha\nbravo\n"
+  },
+  "outFiles": {
+    "copy.txt": "alpha\nbravo\n",
+    "source.txt": "alpha\nbravo\n"
+  }
+}

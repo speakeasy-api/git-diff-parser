@@ -1,0 +1,12 @@
+{
+  "skipLibrary": true,
+  "gitArgs": [
+    "--reverse"
+  ],
+  "srcFiles": {
+    "file.txt": "z\nb\n"
+  },
+  "outFiles": {
+    "file.txt": "a\nb\n"
+  }
+}

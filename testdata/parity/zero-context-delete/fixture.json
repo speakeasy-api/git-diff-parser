@@ -1,0 +1,5 @@
+{
+  "gitArgs": [
+    "--unidiff-zero"
+  ]
+}
