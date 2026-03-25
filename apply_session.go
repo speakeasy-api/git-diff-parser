@@ -8,11 +8,10 @@ type validatedPatch struct {
 
 type applySession struct {
 	applier     *PatchApply
-	renderer    missRenderer
 	sourceLines []fileLine
 	image       []fileLine
 	cursor      int
-	conflicts   int
+	conflicts   []applyConflict
 }
 
 func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, error) {
@@ -37,25 +36,26 @@ func (p *PatchApply) newApplySession(pristine []byte) *applySession {
 	sourceLines := splitFileLines(pristine)
 	return &applySession{
 		applier:     p,
-		renderer:    p.missRenderer(),
 		sourceLines: sourceLines,
 		image:       make([]fileLine, 0, len(sourceLines)),
 	}
 }
 
-func (s *applySession) apply(patch validatedPatch) (ApplyResult, error) {
+func (s *applySession) apply(patch validatedPatch) (applyOutcome, error) {
 	for _, hunk := range patch.hunks {
 		s.applyHunk(hunk)
 	}
 
 	s.appendSourceUntil(len(s.sourceLines))
-	return s.renderer.result(joinFileLines(s.image), s.conflicts)
+	return applyOutcome{
+		content:   append([]fileLine(nil), s.image...),
+		conflicts: append([]applyConflict(nil), s.conflicts...),
+	}, nil
 }
 
 func (s *applySession) applyHunk(hunk patchHunk) {
 	matchIndex, matched := s.findPos(hunk)
 	if !matched {
-		s.conflicts++
 		s.appendConflictingHunk(hunk)
 		return
 	}
@@ -90,7 +90,16 @@ func (s *applySession) appendConflictingHunk(hunk patchHunk) {
 	}
 
 	s.appendSourceUntil(conflictStart)
-	s.image = s.renderer.appendMiss(s.image, s.sourceLines[conflictStart:conflictEnd], desiredLines(hunk))
+	offset := len(s.image)
+	ours := append([]fileLine(nil), s.sourceLines[conflictStart:conflictEnd]...)
+	theirs := desiredLines(hunk)
+	s.image = appendSourceLines(s.image, ours...)
+	s.conflicts = append(s.conflicts, applyConflict{
+		offset: offset,
+		hunk:   hunk,
+		ours:   ours,
+		theirs: theirs,
+	})
 	s.cursor = conflictEnd
 }
 
