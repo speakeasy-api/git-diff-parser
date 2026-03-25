@@ -8,6 +8,7 @@ type validatedPatch struct {
 
 type applySession struct {
 	applier     *PatchApply
+	renderer    missRenderer
 	sourceLines []fileLine
 	image       []fileLine
 	cursor      int
@@ -36,6 +37,7 @@ func (p *PatchApply) newApplySession(pristine []byte) *applySession {
 	sourceLines := splitFileLines(pristine)
 	return &applySession{
 		applier:     p,
+		renderer:    p.missRenderer(),
 		sourceLines: sourceLines,
 		image:       make([]fileLine, 0, len(sourceLines)),
 	}
@@ -47,21 +49,7 @@ func (s *applySession) apply(patch validatedPatch) (ApplyResult, error) {
 	}
 
 	s.appendSourceUntil(len(s.sourceLines))
-	result := ApplyResult{Content: joinFileLines(s.image)}
-	if s.conflicts > 0 {
-		if s.applier.options.Mode == ApplyModeMerge {
-			result.MergeConflicts = s.conflicts
-			return result, &ApplyError{
-				MergeConflicts:   s.conflicts,
-				ConflictingHunks: s.conflicts,
-			}
-		}
-		result.DirectMisses = s.conflicts
-		return result, &ApplyError{
-			DirectMisses: s.conflicts,
-		}
-	}
-	return result, nil
+	return s.renderer.result(joinFileLines(s.image), s.conflicts)
 }
 
 func (s *applySession) applyHunk(hunk patchHunk) {
@@ -102,11 +90,7 @@ func (s *applySession) appendConflictingHunk(hunk patchHunk) {
 	}
 
 	s.appendSourceUntil(conflictStart)
-	if s.applier.options.Mode == ApplyModeMerge {
-		s.image = s.applier.appendConflict(s.image, s.sourceLines[conflictStart:conflictEnd], desiredLines(hunk))
-	} else {
-		s.image = appendSourceLines(s.image, s.sourceLines[conflictStart:conflictEnd]...)
-	}
+	s.image = s.renderer.appendMiss(s.image, s.sourceLines[conflictStart:conflictEnd], desiredLines(hunk))
 	s.cursor = conflictEnd
 }
 
