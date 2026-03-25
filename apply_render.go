@@ -5,7 +5,7 @@ import "bytes"
 func renderApplyResult(pristine []byte, outcome applyOutcome, options ApplyOptions) ApplyResult {
 	result := ApplyResult{
 		Content: joinFileLines(outcome.content),
-		Reject:  renderRejectContent(outcome.conflicts),
+		Reject:  renderRejectContent(outcome.rejectHead, outcome.conflicts),
 	}
 
 	if len(outcome.conflicts) == 0 {
@@ -48,16 +48,17 @@ func renderMergeContent(base []fileLine, conflicts []applyConflict, labels Confl
 	return joinFileLines(rendered)
 }
 
-func renderRejectContent(conflicts []applyConflict) []byte {
+func renderRejectContent(header string, conflicts []applyConflict) []byte {
 	if len(conflicts) == 0 {
 		return nil
 	}
 
 	var buf bytes.Buffer
-	for i, conflict := range conflicts {
-		if i > 0 {
-			buf.WriteByte('\n')
-		}
+	if header != "" {
+		buf.WriteString(header)
+		buf.WriteByte('\n')
+	}
+	for _, conflict := range conflicts {
 		if conflict.hunk.header != "" {
 			buf.WriteString(conflict.hunk.header)
 			buf.WriteByte('\n')

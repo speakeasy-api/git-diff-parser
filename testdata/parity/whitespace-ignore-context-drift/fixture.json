@@ -1,0 +1,6 @@
+{
+  "gitArgs": [
+    "--ignore-whitespace"
+  ],
+  "ignoreWhitespace": true
+}
