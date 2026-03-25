@@ -195,9 +195,9 @@ func preimageLines(hunk patchHunk) []fileLine {
 	return lines
 }
 
-func matchAnchoredFragment(source []fileLine, start int, begin, end anchoredFragment) bool {
-	return matchFragment(source, start+begin.offset, begin.lines) &&
-		matchFragment(source, start+end.offset, end.lines)
+func matchAnchoredFragment(source []fileLine, start int, begin, end anchoredFragment, ignoreWhitespace bool) bool {
+	return matchFragment(source, start+begin.offset, begin.lines, ignoreWhitespace) &&
+		matchFragment(source, start+end.offset, end.lines, ignoreWhitespace)
 }
 
 func splitAnchoredFragment(lines []fileLine) (anchoredFragment, anchoredFragment) {
@@ -219,7 +219,7 @@ func splitAnchoredFragment(lines []fileLine) (anchoredFragment, anchoredFragment
 		}
 }
 
-func matchFragment(source []fileLine, start int, fragment []fileLine) bool {
+func matchFragment(source []fileLine, start int, fragment []fileLine, ignoreWhitespace bool) bool {
 	if len(fragment) == 0 {
 		return true
 	}
@@ -228,14 +228,29 @@ func matchFragment(source []fileLine, start int, fragment []fileLine) bool {
 	}
 
 	for i := range fragment {
-		if source[start+i].text != fragment[i].text ||
-			source[start+i].hasNewline != fragment[i].hasNewline ||
-			source[start+i].eofMarker != fragment[i].eofMarker {
+		if !lineMatches(source[start+i], fragment[i], ignoreWhitespace) {
 			return false
 		}
 	}
 
 	return true
+}
+
+func lineMatches(left, right fileLine, ignoreWhitespace bool) bool {
+	if left.hasNewline != right.hasNewline || left.eofMarker != right.eofMarker {
+		return false
+	}
+	if left.text == right.text {
+		return true
+	}
+	if !ignoreWhitespace {
+		return false
+	}
+	return normalizeWhitespace(left.text) == normalizeWhitespace(right.text)
+}
+
+func normalizeWhitespace(text string) string {
+	return strings.Join(strings.Fields(text), " ")
 }
 
 func (p *PatchApply) appendConflict(out []fileLine, ours, theirs []fileLine) []fileLine {

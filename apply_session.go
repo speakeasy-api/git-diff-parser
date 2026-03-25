@@ -112,7 +112,7 @@ func (s *applySession) findPos(hunk patchHunk) (int, bool) {
 	}
 
 	postimage := desiredLines(hunk)
-	if hunk.newCount >= hunk.oldCount && preferred <= len(s.sourceLines) && matchFragment(s.sourceLines, preferred, postimage) {
+	if hunk.newCount >= hunk.oldCount && preferred <= len(s.sourceLines) && matchFragment(s.sourceLines, preferred, postimage, s.ignoreWhitespace()) {
 		return 0, false
 	}
 
@@ -124,12 +124,12 @@ func (s *applySession) findPos(hunk patchHunk) (int, bool) {
 func (s *applySession) findPosWithAnchors(preferred int, begin, end anchoredFragment) (int, bool) {
 	for offset := 0; ; offset++ {
 		left := preferred - offset
-		if left >= s.cursor && left <= len(s.sourceLines) && matchAnchoredFragment(s.sourceLines, left, begin, end) {
+		if left >= s.cursor && left <= len(s.sourceLines) && matchAnchoredFragment(s.sourceLines, left, begin, end, s.ignoreWhitespace()) {
 			return left, true
 		}
 
 		right := preferred + offset
-		if offset > 0 && right >= s.cursor && right <= len(s.sourceLines) && matchAnchoredFragment(s.sourceLines, right, begin, end) {
+		if offset > 0 && right >= s.cursor && right <= len(s.sourceLines) && matchAnchoredFragment(s.sourceLines, right, begin, end, s.ignoreWhitespace()) {
 			return right, true
 		}
 
@@ -139,4 +139,8 @@ func (s *applySession) findPosWithAnchors(preferred int, begin, end anchoredFrag
 	}
 
 	return 0, false
+}
+
+func (s *applySession) ignoreWhitespace() bool {
+	return s.applier != nil && s.applier.options.IgnoreWhitespace
 }

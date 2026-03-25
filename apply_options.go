@@ -20,8 +20,9 @@ type ConflictLabels struct {
 
 // ApplyOptions configures the apply engine.
 type ApplyOptions struct {
-	Mode           ApplyMode
-	ConflictLabels ConflictLabels
+	Mode             ApplyMode
+	ConflictLabels   ConflictLabels
+	IgnoreWhitespace bool
 }
 
 func DefaultApplyOptions() ApplyOptions {

@@ -16,8 +16,8 @@ func TestMatchAnchoredFragmentRequiresBothEnds(t *testing.T) {
 		{text: "d", hasNewline: true},
 	})
 
-	require.True(t, matchAnchoredFragment(source, 1, begin, end))
-	require.False(t, matchAnchoredFragment(source, 5, begin, end))
+	require.True(t, matchAnchoredFragment(source, 1, begin, end, false))
+	require.False(t, matchAnchoredFragment(source, 5, begin, end, false))
 }
 
 func TestFindPosRejectsAlreadyAppliedPostimage(t *testing.T) {
@@ -39,4 +39,16 @@ func TestFindPosRejectsAlreadyAppliedPostimage(t *testing.T) {
 	pos, matched := session.findPos(hunk)
 	assert.Equal(t, 0, pos)
 	assert.False(t, matched)
+}
+
+func TestMatchFragment_IgnoreWhitespace(t *testing.T) {
+	source := splitFileLines([]byte("alpha\n  beta\ncharlie\n"))
+	fragment := []fileLine{
+		{text: "alpha", hasNewline: true},
+		{text: "beta", hasNewline: true},
+		{text: "charlie", hasNewline: true},
+	}
+
+	require.False(t, matchFragment(source, 0, fragment, false))
+	require.True(t, matchFragment(source, 0, fragment, true))
 }
