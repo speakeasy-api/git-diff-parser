@@ -33,23 +33,8 @@ func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, er
 	}
 
 	fileDiff := parsed.FileDiff[0]
-	if fileDiff.IsBinary {
-		return validatedPatch{}, fmt.Errorf("binary patches are not supported")
-	}
-	if fileDiff.NewMode != "" {
-		return validatedPatch{}, fmt.Errorf("file mode changes are not supported")
-	}
-	if fileDiff.Type == FileDiffTypeAdded || fileDiff.Type == FileDiffTypeDeleted {
-		return validatedPatch{}, fmt.Errorf("patches may only modify existing files")
-	}
-	if len(fileDiff.Hunks) == 0 {
-		return validatedPatch{}, fmt.Errorf("patch contains no hunks")
-	}
-	if fileDiff.RenameFrom != "" || fileDiff.RenameTo != "" || fileDiff.CopyFrom != "" || fileDiff.CopyTo != "" {
-		return validatedPatch{}, fmt.Errorf("unsupported patch syntax: copy and rename headers are not supported")
-	}
-	if !fileDiffHasChanges(fileDiff) {
-		return validatedPatch{}, fmt.Errorf("patch contains no effective changes")
+	if err := validateApplyFileDiff(fileDiff); err != nil {
+		return validatedPatch{}, err
 	}
 
 	hunks := make([]patchHunk, 0, len(fileDiff.Hunks))
@@ -91,8 +76,8 @@ func (s *applySession) apply(patch validatedPatch) (applyOutcome, error) {
 
 	s.appendSourceUntil(len(s.sourceLines))
 	return applyOutcome{
-		content:   append([]fileLine(nil), s.image...),
-		conflicts: append([]applyConflict(nil), s.conflicts...),
+		content:    append([]fileLine(nil), s.image...),
+		conflicts:  append([]applyConflict(nil), s.conflicts...),
 		rejectHead: s.rejectHead,
 	}, nil
 }
@@ -236,26 +221,6 @@ func formatPatchHunkRange(start, count int) string {
 		return fmt.Sprintf("%d", start)
 	}
 	return fmt.Sprintf("%d,%d", start, count)
-}
-
-func (s *applySession) findPosWithAnchors(preferred int, begin, end anchoredFragment) (int, bool) {
-	for offset := 0; ; offset++ {
-		left := preferred - offset
-		if left >= s.cursor && left <= len(s.sourceLines) && matchAnchoredFragment(s.sourceLines, left, begin, end, s.ignoreWhitespace()) {
-			return left, true
-		}
-
-		right := preferred + offset
-		if offset > 0 && right >= s.cursor && right <= len(s.sourceLines) && matchAnchoredFragment(s.sourceLines, right, begin, end, s.ignoreWhitespace()) {
-			return right, true
-		}
-
-		if left < s.cursor && right > len(s.sourceLines) {
-			break
-		}
-	}
-
-	return 0, false
 }
 
 func (s *applySession) ignoreWhitespace() bool {

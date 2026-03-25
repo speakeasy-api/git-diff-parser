@@ -17,8 +17,8 @@ type ApplyResult struct {
 }
 
 type applyOutcome struct {
-	content   []fileLine
-	conflicts []applyConflict
+	content    []fileLine
+	conflicts  []applyConflict
 	rejectHead string
 }
 
