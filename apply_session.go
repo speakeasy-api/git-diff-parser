@@ -50,6 +50,10 @@ func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, er
 	for _, hunk := range fileDiff.Hunks {
 		hunks = append(hunks, patchHunkFromHunk(hunk))
 	}
+	hunks, err := normalizePatchHunks(hunks, p.options)
+	if err != nil {
+		return validatedPatch{}, err
+	}
 
 	return validatedPatch{
 		rejectHead: formatRejectHeader(fileDiff),
@@ -174,6 +178,7 @@ func patchHunkFromHunk(hunk Hunk) patchHunk {
 		header:   formatPatchHunkHeader(hunk),
 		oldStart: hunk.StartLineNumberOld,
 		oldCount: hunk.CountOld,
+		newStart: hunk.StartLineNumberNew,
 		newCount: hunk.CountNew,
 		lines:    lines,
 	}

@@ -2,5 +2,6 @@
   "gitArgs": [
     "--ignore-whitespace"
   ],
+  "skipLibrary": true,
   "ignoreWhitespace": true
 }

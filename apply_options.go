@@ -23,6 +23,10 @@ type ApplyOptions struct {
 	Mode             ApplyMode
 	ConflictLabels   ConflictLabels
 	IgnoreWhitespace bool
+	Reverse          bool
+	UnidiffZero      bool
+	Recount          bool
+	InaccurateEOF    bool
 }
 
 func DefaultApplyOptions() ApplyOptions {
