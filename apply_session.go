@@ -16,6 +16,12 @@ type applySession struct {
 	rejectHead  string
 }
 
+type matchedHunk struct {
+	sourceStart int
+	hunkStart   int
+	hunkEnd     int
+}
+
 func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, error) {
 	normalizedPatch := normalizePatchForValidation(patchData)
 	parsed, errs := Parse(string(normalizedPatch))
@@ -74,7 +80,13 @@ func (s *applySession) apply(patch validatedPatch) (applyOutcome, error) {
 	s.rejectHead = patch.rejectHead
 
 	for _, hunk := range patch.hunks {
-		s.applyHunk(hunk)
+		match, matched := s.findPos(hunk)
+		if !matched {
+			s.appendConflictingHunk(hunk)
+			continue
+		}
+
+		s.applyHunk(hunk, match)
 	}
 
 	s.appendSourceUntil(len(s.sourceLines))
@@ -85,16 +97,10 @@ func (s *applySession) apply(patch validatedPatch) (applyOutcome, error) {
 	}, nil
 }
 
-func (s *applySession) applyHunk(hunk patchHunk) {
-	matchIndex, matched := s.findPos(hunk)
-	if !matched {
-		s.appendConflictingHunk(hunk)
-		return
-	}
+func (s *applySession) applyHunk(hunk patchHunk, match matchedHunk) {
+	s.appendSourceUntil(match.sourceStart)
 
-	s.appendSourceUntil(matchIndex)
-
-	for _, hunkLine := range hunk.lines {
+	for _, hunkLine := range hunk.lines[match.hunkStart:match.hunkEnd] {
 		switch hunkLine.kind {
 		case ' ':
 			s.image = append(s.image, fileLine{text: hunkLine.text, hasNewline: hunkLine.hasNewline, eofMarker: hunkLine.newEOF})
@@ -143,7 +149,7 @@ func (s *applySession) appendSourceUntil(limit int) {
 	s.cursor = limit
 }
 
-func (s *applySession) findPos(hunk patchHunk) (int, bool) {
+func (s *applySession) findPos(hunk patchHunk) (matchedHunk, bool) {
 	preferred := hunk.oldStart - 1
 	if hunk.oldCount == 0 {
 		preferred = hunk.oldStart
@@ -154,12 +160,39 @@ func (s *applySession) findPos(hunk patchHunk) (int, bool) {
 
 	postimage := desiredLines(hunk)
 	if hunk.newCount >= hunk.oldCount && preferred <= len(s.sourceLines) && matchFragment(s.sourceLines, preferred, postimage, s.ignoreWhitespace()) {
-		return 0, false
+		return matchedHunk{}, false
 	}
 
 	preimage := preimageLines(hunk)
-	begin, end := splitAnchoredFragment(preimage)
-	return s.findPosWithAnchors(preferred, begin, end)
+	if pos, ok := s.findPosForFragment(preferred, preimage); ok {
+		return matchedHunk{
+			sourceStart: pos,
+			hunkStart:   0,
+			hunkEnd:     len(hunk.lines),
+		}, true
+	}
+
+	return matchedHunk{}, false
+}
+
+func (s *applySession) findPosForFragment(preferred int, fragment []fileLine) (int, bool) {
+	for offset := 0; ; offset++ {
+		left := preferred - offset
+		if left >= s.cursor && matchFragment(s.sourceLines, left, fragment, s.ignoreWhitespace()) {
+			return left, true
+		}
+
+		right := preferred + offset
+		if offset > 0 && right >= s.cursor && matchFragment(s.sourceLines, right, fragment, s.ignoreWhitespace()) {
+			return right, true
+		}
+
+		if left < s.cursor && right > len(s.sourceLines) {
+			break
+		}
+	}
+
+	return 0, false
 }
 
 func patchHunkFromHunk(hunk Hunk) patchHunk {
