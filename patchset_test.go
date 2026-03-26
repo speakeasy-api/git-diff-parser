@@ -1,10 +1,9 @@
-package git_diff_parser_test
+package git_diff_parser
 
 import (
 	"path/filepath"
 	"testing"
 
-	git_diff_parser "github.com/speakeasy-api/git-diff-parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +15,7 @@ func TestParsePatchset(t *testing.T) {
 	patchB := buildPatch(t, "beta.txt", []byte("beta\none\n"), []byte("beta\ntwo\n"))
 	patchsetData := append(append([]byte{}, patchA...), patchB...)
 
-	patchset, errs := git_diff_parser.ParsePatchset(patchsetData)
+	patchset, errs := parsePatchset(patchsetData)
 	require.Empty(t, errs)
 	require.Len(t, patchset.Files, 2)
 
@@ -39,7 +38,7 @@ func TestPatchsetApply_MultipleFiles(t *testing.T) {
 	patchB := buildPatch(t, "beta.txt", original["beta.txt"], []byte("beta\ntwo\n"))
 	patchsetData := append(append([]byte{}, patchA...), patchB...)
 
-	applied, err := git_diff_parser.ApplyPatchset(original, patchsetData)
+	applied, err := applyPatchset(original, patchsetData)
 	require.NoError(t, err)
 
 	assert.Equal(t, []byte("alpha\ntwo\n"), applied["alpha.txt"])
@@ -127,7 +126,7 @@ new mode 100755
 			t.Parallel()
 
 			original := cloneTestTree(test.tree)
-			applied, err := git_diff_parser.ApplyPatchset(test.tree, test.patch)
+			applied, err := applyPatchset(test.tree, test.patch)
 			require.NoError(t, err)
 			assert.Equal(t, test.wantTree, applied)
 			assert.Equal(t, original, test.tree)
@@ -158,7 +157,7 @@ rename to dst.txt
 	}
 	original := cloneTestTree(tree)
 
-	applied, err := git_diff_parser.ApplyPatchset(tree, patchsetData)
+	applied, err := applyPatchset(tree, patchsetData)
 	require.Error(t, err)
 	assert.Nil(t, applied)
 	assert.Equal(t, original, tree)
@@ -168,16 +167,16 @@ rename to dst.txt
 func TestPatchsetApply_RejectsBinaryPatches(t *testing.T) {
 	t.Parallel()
 
-	_, err := git_diff_parser.ApplyPatchset(
+	_, err := applyPatchset(
 		map[string][]byte{"favicon-16x16-light.png": []byte("binary")},
 		mustReadFile(t, filepath.Join("testdata", "significant", "binary-delta.diff")),
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "binary patches are not supported")
 
-	var unsupportedErr *git_diff_parser.UnsupportedPatchError
+	var unsupportedErr *unsupportedPatchError
 	require.ErrorAs(t, err, &unsupportedErr)
-	assert.ErrorIs(t, err, git_diff_parser.ErrPatchBinary)
+	assert.ErrorIs(t, err, errPatchBinary)
 }
 
 func cloneTestTree(tree map[string][]byte) map[string][]byte {

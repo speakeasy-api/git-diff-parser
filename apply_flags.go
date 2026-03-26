@@ -2,7 +2,7 @@ package git_diff_parser
 
 import "fmt"
 
-func normalizePatchHunks(hunks []patchHunk, options ApplyOptions) ([]patchHunk, error) {
+func normalizePatchHunks(hunks []patchHunk, options applyOptions) ([]patchHunk, error) {
 	if len(hunks) == 0 {
 		return hunks, nil
 	}

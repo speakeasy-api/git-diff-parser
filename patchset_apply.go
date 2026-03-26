@@ -2,23 +2,23 @@ package git_diff_parser
 
 import "fmt"
 
-const patchsetOperationModify PatchsetOperation = "modify"
+const patchsetOperationModify patchsetOperation = "modify"
 
-func applyPatchsetFile(tree map[string][]byte, file PatchsetFile) error {
+func applyPatchsetFile(tree map[string][]byte, file patchsetFile) error {
 	if file.Diff.IsBinary {
-		return &UnsupportedPatchError{
-			Operation: PatchsetOperationBinary,
+		return &unsupportedPatchError{
+			Operation: patchsetOperationBinary,
 			Path:      firstNonEmpty(file.Diff.ToFile, file.Diff.FromFile),
 		}
 	}
 
-	op, sourcePath, targetPath, err := patchsetOperation(tree, file.Diff)
+	op, sourcePath, targetPath, err := determinePatchsetOperation(tree, file.Diff)
 	if err != nil {
 		return err
 	}
 
 	switch op {
-	case PatchsetOperationCreate:
+	case patchsetOperationCreate:
 		if _, exists := tree[targetPath]; exists {
 			return fmt.Errorf("cannot create existing file %q", targetPath)
 		}
@@ -28,7 +28,7 @@ func applyPatchsetFile(tree map[string][]byte, file PatchsetFile) error {
 		}
 		tree[targetPath] = append([]byte(nil), content...)
 		return nil
-	case PatchsetOperationDelete:
+	case patchsetOperationDelete:
 		content, exists := tree[sourcePath]
 		if !exists {
 			return fmt.Errorf("cannot delete missing file %q", sourcePath)
@@ -40,7 +40,7 @@ func applyPatchsetFile(tree map[string][]byte, file PatchsetFile) error {
 		}
 		delete(tree, sourcePath)
 		return nil
-	case PatchsetOperationRename:
+	case patchsetOperationRename:
 		content, exists := tree[sourcePath]
 		if !exists {
 			return fmt.Errorf("cannot rename missing file %q", sourcePath)
@@ -57,7 +57,7 @@ func applyPatchsetFile(tree map[string][]byte, file PatchsetFile) error {
 		delete(tree, sourcePath)
 		tree[targetPath] = append([]byte(nil), applied...)
 		return nil
-	case PatchsetOperationCopy:
+	case patchsetOperationCopy:
 		content, exists := tree[sourcePath]
 		if !exists {
 			return fmt.Errorf("cannot copy missing file %q", sourcePath)
@@ -71,7 +71,7 @@ func applyPatchsetFile(tree map[string][]byte, file PatchsetFile) error {
 		}
 		tree[targetPath] = append([]byte(nil), applied...)
 		return nil
-	case PatchsetOperationModeChange, patchsetOperationModify:
+	case patchsetOperationModeChange, patchsetOperationModify:
 		content, exists := tree[targetPath]
 		if !exists {
 			return fmt.Errorf("cannot modify missing file %q", targetPath)
@@ -87,40 +87,40 @@ func applyPatchsetFile(tree map[string][]byte, file PatchsetFile) error {
 	}
 }
 
-func patchsetOperation(tree map[string][]byte, fileDiff FileDiff) (PatchsetOperation, string, string, error) {
+func determinePatchsetOperation(tree map[string][]byte, fileDiff fileDiff) (patchsetOperation, string, string, error) {
 	sourcePath, targetPath := patchsetPaths(fileDiff)
 
 	switch {
 	case fileDiff.RenameFrom != "" || fileDiff.RenameTo != "":
-		return PatchsetOperationRename, sourcePath, targetPath, nil
+		return patchsetOperationRename, sourcePath, targetPath, nil
 	case fileDiff.CopyFrom != "" || fileDiff.CopyTo != "":
-		return PatchsetOperationCopy, sourcePath, targetPath, nil
-	case fileDiff.Type == FileDiffTypeAdded:
-		return PatchsetOperationCreate, "", targetPath, nil
-	case fileDiff.Type == FileDiffTypeDeleted:
-		return PatchsetOperationDelete, sourcePath, "", nil
+		return patchsetOperationCopy, sourcePath, targetPath, nil
+	case fileDiff.Type == fileDiffTypeAdded:
+		return patchsetOperationCreate, "", targetPath, nil
+	case fileDiff.Type == fileDiffTypeDeleted:
+		return patchsetOperationDelete, sourcePath, "", nil
 	}
 
 	if fileDiff.NewMode != "" && fileDiff.OldMode == "" {
 		if _, exists := tree[targetPath]; exists {
 			return "", "", "", fmt.Errorf("cannot create existing file %q", targetPath)
 		}
-		return PatchsetOperationCreate, "", targetPath, nil
+		return patchsetOperationCreate, "", targetPath, nil
 	}
 	if fileDiff.OldMode != "" || fileDiff.NewMode != "" {
-		return PatchsetOperationModeChange, sourcePath, targetPath, nil
+		return patchsetOperationModeChange, sourcePath, targetPath, nil
 	}
 
 	return patchsetOperationModify, sourcePath, targetPath, nil
 }
 
-func patchsetPaths(fileDiff FileDiff) (string, string) {
+func patchsetPaths(fileDiff fileDiff) (string, string) {
 	sourcePath := firstNonEmpty(fileDiff.RenameFrom, fileDiff.CopyFrom, fileDiff.FromFile, fileDiff.ToFile)
 	targetPath := firstNonEmpty(fileDiff.RenameTo, fileDiff.CopyTo, fileDiff.ToFile, fileDiff.FromFile)
 	return sourcePath, targetPath
 }
 
-func applyPatchsetContent(pristine []byte, file PatchsetFile) ([]byte, error) {
+func applyPatchsetContent(pristine []byte, file patchsetFile) ([]byte, error) {
 	if len(file.Diff.Hunks) == 0 {
 		return append([]byte(nil), pristine...), nil
 	}
@@ -130,7 +130,7 @@ func applyPatchsetContent(pristine []byte, file PatchsetFile) ([]byte, error) {
 		hunks = append(hunks, patchHunkFromHunk(hunk))
 	}
 
-	result, err := NewPatchApply(ApplyOptions{Mode: ApplyModeApply}).applyValidatedPatch(pristine, validatedPatch{
+	result, err := newPatchApply(applyOptions{Mode: applyModeApply}).applyValidatedPatch(pristine, validatedPatch{
 		rejectHead: formatRejectHeader(file.Diff),
 		hunks:      hunks,
 	})

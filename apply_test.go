@@ -1,4 +1,4 @@
-package git_diff_parser_test
+package git_diff_parser
 
 import (
 	"bytes"
@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/pmezard/go-difflib/difflib"
-	git_diff_parser "github.com/speakeasy-api/git-diff-parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,15 +57,15 @@ func TestApplyFile_TextFixtures(t *testing.T) {
 			t.Parallel()
 
 			files := loadApplyFixture(t, test.fixture)
-			applied, err := git_diff_parser.ApplyFile(files.src, files.patch)
+			applied, err := ApplyFile(files.src, files.patch)
 
 			if test.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), test.wantErr)
 				if test.conflict {
-					var conflictErr *git_diff_parser.ConflictError
-					require.ErrorAs(t, err, &conflictErr)
-					assert.True(t, errors.Is(err, git_diff_parser.ErrPatchConflict))
+					var applyErr *applyError
+					require.ErrorAs(t, err, &applyErr)
+					assert.True(t, errors.Is(err, ErrPatchConflict))
 					assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 					assert.Contains(t, string(applied), defaultIncomingConflictMarker)
 				}
@@ -120,7 +119,7 @@ abc
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := git_diff_parser.ApplyFile([]byte("package testsdk\n"), test.patch)
+			_, err := ApplyFile([]byte("package testsdk\n"), test.patch)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.wantErr)
 		})
@@ -160,7 +159,7 @@ func TestApplyFile_RejectsHeaderOnlyAndNoOpPatches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := git_diff_parser.ApplyFile([]byte("package testsdk\n"), test.patch)
+			_, err := ApplyFile([]byte("package testsdk\n"), test.patch)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.wantErr)
 		})
@@ -194,7 +193,7 @@ func TestApplyFile_NoNewlineMatrix(t *testing.T) {
 				t.Parallel()
 
 				patch := mustReadFile(t, filepath.Join("testdata", "apply", "t4101", "diff."+from.name+"-"+to.name))
-				applied, err := git_diff_parser.ApplyFile(from.content, patch)
+				applied, err := ApplyFile(from.content, patch)
 				require.NoError(t, err)
 				assert.Equal(t, to.content, applied)
 			})
@@ -227,7 +226,7 @@ func TestApplyFile_BoundaryCases(t *testing.T) {
 				t.Parallel()
 
 				patch := buildPatchWithContext(t, "victim", original, test.want, context)
-				applied, err := git_diff_parser.ApplyFile(original, patch)
+				applied, err := ApplyFile(original, patch)
 				require.NoError(t, err)
 				assert.Equal(t, test.want, applied)
 			})
@@ -258,7 +257,7 @@ func TestApplyFile_OffsetPatches(t *testing.T) {
 			t.Parallel()
 
 			patch := rewriteFirstHunkHeader(basePatch, test.header)
-			applied, err := git_diff_parser.ApplyFile(original, patch)
+			applied, err := ApplyFile(original, patch)
 			require.NoError(t, err)
 			assert.Equal(t, target, applied)
 		})
@@ -289,10 +288,9 @@ func TestApplyFile_DamagedContextPatchesConflictWithoutFuzz(t *testing.T) {
 			t.Parallel()
 
 			patch := rewriteFirstHunkHeader(damaged, test.header)
-			applied, err := git_diff_parser.ApplyFile(original, patch)
+			applied, err := ApplyFile(original, patch)
 			require.Error(t, err)
-			var conflictErr *git_diff_parser.ConflictError
-			require.ErrorAs(t, err, &conflictErr)
+			require.ErrorIs(t, err, ErrPatchConflict)
 			assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 		})
 	}
@@ -324,7 +322,7 @@ func TestApplyFile_EmptyContextPatches(t *testing.T) {
 			t.Parallel()
 
 			patch := buildPatchWithContext(t, "file", test.original, test.target, 0)
-			applied, err := git_diff_parser.ApplyFile(test.original, patch)
+			applied, err := ApplyFile(test.original, patch)
 			require.NoError(t, err)
 			assert.Equal(t, test.target, applied)
 		})
@@ -373,7 +371,7 @@ func TestApplyFile_EmptyContextNoTrailingNewlinePatches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			applied, err := git_diff_parser.ApplyFile(test.original, test.patch)
+			applied, err := ApplyFile(test.original, test.patch)
 			require.NoError(t, err)
 			assert.Equal(t, test.target, applied)
 		})
@@ -387,7 +385,7 @@ func TestApplyFile_RelocatesHunkWhenContextStillMatches(t *testing.T) {
 	patchData := buildPatch(t, "status.go", originalPristine, []byte("package testsdk\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"))
 	shiftedPristine := []byte("package testsdk\n\n// generated comment moved the hunk down\n\ntype Status struct{}\n")
 
-	applied, err := git_diff_parser.ApplyFile(shiftedPristine, patchData)
+	applied, err := ApplyFile(shiftedPristine, patchData)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("package testsdk\n\n// generated comment moved the hunk down\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"), applied)
 }
@@ -400,7 +398,7 @@ func TestApplyFile_RelocatesToNearestMatchingBlock(t *testing.T) {
 	shifted := []byte("header\nanchor\ncommon\nvalue-old\nend\ngap\nextra\nanchor\ncommon\nvalue-old\nend\n")
 
 	patch := buildPatchWithContext(t, "dup.txt", original, target, 1)
-	applied, err := git_diff_parser.ApplyFile(shifted, patch)
+	applied, err := ApplyFile(shifted, patch)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("header\nanchor\ncommon\nvalue-old\nend\ngap\nextra\nanchor\ncommon\nvalue-new\nend\n"), applied)
 }
@@ -412,7 +410,7 @@ func TestApplyFile_MultipleHunks(t *testing.T) {
 	target := []byte("line 1\nline two\nline 3\nline 4\nline 5\nline six\nline 7\nline 8\n")
 
 	patch := buildPatchWithContext(t, "multi.txt", original, target, 1)
-	applied, err := git_diff_parser.ApplyFile(original, patch)
+	applied, err := ApplyFile(original, patch)
 	require.NoError(t, err)
 	assert.Equal(t, target, applied)
 }
@@ -425,10 +423,9 @@ func TestApplyFile_MultipleHunksOneConflict(t *testing.T) {
 	current := []byte("line 1\nline 2\nline 3\nline 4\nline 5\nline VI\nline 7\nline 8\n")
 
 	patch := buildPatchWithContext(t, "multi.txt", original, target, 1)
-	applied, err := git_diff_parser.ApplyFile(current, patch)
+	applied, err := ApplyFile(current, patch)
 	require.Error(t, err)
-	var conflictErr *git_diff_parser.ConflictError
-	require.ErrorAs(t, err, &conflictErr)
+	require.ErrorIs(t, err, ErrPatchConflict)
 	assert.Contains(t, string(applied), "line two")
 	assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 	assert.Contains(t, string(applied), "line VI")
@@ -442,11 +439,10 @@ func TestApplyFile_ReturnsConflictMarkers(t *testing.T) {
 	current := []byte("package testsdk\n\ntype Status struct {\n\tValue string\n}\n")
 	patchData := buildPatch(t, "status.go", base, []byte("package testsdk\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"))
 
-	applied, err := git_diff_parser.ApplyFile(current, patchData)
+	applied, err := ApplyFile(current, patchData)
 	require.Error(t, err)
-	var conflictErr *git_diff_parser.ConflictError
-	require.ErrorAs(t, err, &conflictErr)
-	assert.True(t, errors.Is(err, git_diff_parser.ErrPatchConflict))
+	require.ErrorIs(t, err, ErrPatchConflict)
+	assert.True(t, errors.Is(err, ErrPatchConflict))
 	assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 	assert.Contains(t, string(applied), defaultIncomingConflictMarker)
 	assert.Contains(t, string(applied), "func (s *Status) String() string")
@@ -459,11 +455,11 @@ func TestApplyFileWithOptions_RendersNeutralConflictMarkers(t *testing.T) {
 	current := []byte("package testsdk\n\ntype Status struct {\n\tValue string\n}\n")
 	patchData := buildPatch(t, "status.go", base, []byte("package testsdk\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"))
 
-	result, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
-		Mode: git_diff_parser.ApplyModeMerge,
+	result, err := applyFileWithOptions(current, patchData, applyOptions{
+		Mode: applyModeMerge,
 	})
 	require.Error(t, err)
-	var applyErr *git_diff_parser.ApplyError
+	var applyErr *applyError
 	require.ErrorAs(t, err, &applyErr)
 	assert.Equal(t, 0, result.DirectMisses)
 	assert.Equal(t, 1, result.MergeConflicts)
@@ -481,11 +477,11 @@ func TestApplyFileWithOptions_DirectModeReportsMissesWithoutMarkers(t *testing.T
 	current := []byte("package testsdk\n\ntype Status struct {\n\tValue string\n}\n")
 	patchData := buildPatch(t, "status.go", base, []byte("package testsdk\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"))
 
-	result, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
-		Mode: git_diff_parser.ApplyModeApply,
+	result, err := applyFileWithOptions(current, patchData, applyOptions{
+		Mode: applyModeApply,
 	})
 	require.Error(t, err)
-	var applyErr *git_diff_parser.ApplyError
+	var applyErr *applyError
 	require.ErrorAs(t, err, &applyErr)
 	assert.Equal(t, 1, result.DirectMisses)
 	assert.Equal(t, 0, result.MergeConflicts)
@@ -503,15 +499,15 @@ func TestPatchApply_AllowsCustomConflictLabels(t *testing.T) {
 	current := []byte("package testsdk\n\ntype Status struct {\n\tValue string\n}\n")
 	patchData := buildPatch(t, "status.go", base, []byte("package testsdk\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"))
 
-	applier := git_diff_parser.NewPatchApply(git_diff_parser.ApplyOptions{
-		Mode: git_diff_parser.ApplyModeMerge,
-		ConflictLabels: git_diff_parser.ConflictLabels{
+	applier := newPatchApply(applyOptions{
+		Mode: applyModeMerge,
+		ConflictLabels: conflictLabels{
 			Current:  "Current (Your changes)",
 			Incoming: "New (Generated by Speakeasy)",
 		},
 	})
 
-	applied, err := applier.ApplyFile(current, patchData)
+	applied, err := applier.applyFile(current, patchData)
 	require.Error(t, err)
 	assert.Contains(t, string(applied), "<<<<<<< Current (Your changes)")
 	assert.Contains(t, string(applied), ">>>>>>> New (Generated by Speakeasy)")
@@ -525,13 +521,13 @@ func TestApplyFileWithOptions_IgnoreWhitespaceAppliesThroughContextDrift(t *test
 	patchData := buildPatchWithContext(t, "whitespace.txt", original, target, 1)
 	current := []byte("alpha\n  beta\ncharlie\n")
 
-	_, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
-		Mode: git_diff_parser.ApplyModeMerge,
+	_, err := applyFileWithOptions(current, patchData, applyOptions{
+		Mode: applyModeMerge,
 	})
 	require.Error(t, err)
 
-	applied, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
-		Mode:             git_diff_parser.ApplyModeMerge,
+	applied, err := applyFileWithOptions(current, patchData, applyOptions{
+		Mode:             applyModeMerge,
 		IgnoreWhitespace: true,
 	})
 	require.NoError(t, err)
@@ -553,7 +549,7 @@ func TestApplyFileWithOptions_ReverseAppliesPatchBackwards(t *testing.T) {
  b
 `)
 
-	applied, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
+	applied, err := applyFileWithOptions(current, patchData, applyOptions{
 		Reverse: true,
 	})
 	require.NoError(t, err)
@@ -571,11 +567,11 @@ func TestApplyFileWithOptions_UnidiffZeroIsAccepted(t *testing.T) {
 -beta
 `)
 
-	baseline, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{})
+	baseline, err := applyFileWithOptions(current, patchData, applyOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, []byte("alpha\ngamma\n"), baseline.Content)
 
-	applied, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
+	applied, err := applyFileWithOptions(current, patchData, applyOptions{
 		UnidiffZero: true,
 	})
 	require.NoError(t, err)
@@ -593,12 +589,12 @@ func TestApplyFileWithOptions_RecountRebuildsHunkCounts(t *testing.T) {
 -beta
 `)
 
-	_, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
+	_, err := applyFileWithOptions(current, patchData, applyOptions{
 		UnidiffZero: true,
 	})
 	require.Error(t, err)
 
-	applied, err := git_diff_parser.ApplyFileWithOptions(current, patchData, git_diff_parser.ApplyOptions{
+	applied, err := applyFileWithOptions(current, patchData, applyOptions{
 		UnidiffZero: true,
 		Recount:     true,
 	})
@@ -645,10 +641,9 @@ func TestApplyFile_RejectsAlreadyAppliedBeginningAndEndingPatches(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			applied, err := git_diff_parser.ApplyFile(test.current, test.patch)
+			applied, err := ApplyFile(test.current, test.patch)
 			require.Error(t, err)
-			var conflictErr *git_diff_parser.ConflictError
-			require.ErrorAs(t, err, &conflictErr)
+			require.ErrorIs(t, err, ErrPatchConflict)
 			assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 		})
 	}
@@ -695,10 +690,9 @@ func TestApplyFile_RejectsAlreadyAppliedMiddlePatches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			applied, err := git_diff_parser.ApplyFile(test.current, test.patch)
+			applied, err := ApplyFile(test.current, test.patch)
 			require.Error(t, err)
-			var conflictErr *git_diff_parser.ConflictError
-			require.ErrorAs(t, err, &conflictErr)
+			require.ErrorIs(t, err, ErrPatchConflict)
 			assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 		})
 	}
@@ -725,7 +719,7 @@ diff --git a/models/components/pet.go b/models/components/pet.go
  type Pet struct{}
 `)
 
-	_, err := git_diff_parser.ApplyFile([]byte("package testsdk\n\ntype SDK struct{}\n"), patchData)
+	_, err := ApplyFile([]byte("package testsdk\n\ntype SDK struct{}\n"), patchData)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expected exactly 1 file diff")
 }
@@ -797,7 +791,7 @@ copy to file-copy
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := git_diff_parser.ApplyFile([]byte("a\n"), test.patch)
+			_, err := ApplyFile([]byte("a\n"), test.patch)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.wantErr)
 		})
@@ -858,7 +852,7 @@ rename to 2
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := git_diff_parser.ApplyFile([]byte("package test\n"), test.patch)
+			_, err := ApplyFile([]byte("package test\n"), test.patch)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.wantErr)
 		})
@@ -894,10 +888,9 @@ func TestApplyFile_ShrinkFailures(t *testing.T) {
 			t.Parallel()
 
 			patch := buildPatch(t, "F", test.original, test.target)
-			applied, err := git_diff_parser.ApplyFile(test.current, patch)
+			applied, err := ApplyFile(test.current, patch)
 			require.Error(t, err)
-			var conflictErr *git_diff_parser.ConflictError
-			require.ErrorAs(t, err, &conflictErr)
+			require.ErrorIs(t, err, ErrPatchConflict)
 			assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 		})
 	}
@@ -910,7 +903,7 @@ func TestApplyFile_CRLFPreservation(t *testing.T) {
 	target := []byte("alpha\r\nbravo\r\n")
 	patch := buildPatch(t, "crlf.txt", pristine, target)
 
-	applied, err := git_diff_parser.ApplyFile(pristine, patch)
+	applied, err := ApplyFile(pristine, patch)
 	require.NoError(t, err)
 	assert.Equal(t, target, applied)
 }
@@ -952,7 +945,7 @@ func expectedApplyFixtureOutput(t *testing.T, files applyFixtureFiles) []byte {
 		return nil
 	}
 
-	parsed, errs := git_diff_parser.Parse(string(files.patch))
+	parsed, errs := parse(string(files.patch))
 	require.Empty(t, errs)
 	require.Len(t, parsed.FileDiff, 1)
 	require.Len(t, parsed.FileDiff[0].Hunks, 1)
@@ -1031,7 +1024,7 @@ func TestApplyFile_PreservesExactBytes(t *testing.T) {
 	t.Parallel()
 
 	files := loadApplyFixture(t, "text_fragment_change_single_noeol")
-	applied, err := git_diff_parser.ApplyFile(files.src, files.patch)
+	applied, err := ApplyFile(files.src, files.patch)
 	require.NoError(t, err)
 	assert.True(t, bytes.Equal(files.out, applied))
 }

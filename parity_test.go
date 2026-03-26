@@ -1,6 +1,6 @@
 //go:build parity
 
-package git_diff_parser_test
+package git_diff_parser
 
 import (
 	"bytes"
@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	git_diff_parser "github.com/speakeasy-api/git-diff-parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -80,9 +79,9 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 
 			if tc.fixture.ExpectConflict {
 				require.Error(t, mergeErr)
-				var conflictErr *git_diff_parser.ConflictError
-				require.ErrorAs(t, mergeErr, &conflictErr)
-				assert.True(t, errors.Is(mergeErr, git_diff_parser.ErrPatchConflict))
+				var applyErr *applyError
+				require.ErrorAs(t, mergeErr, &applyErr)
+				assert.True(t, errors.Is(mergeErr, ErrPatchConflict))
 				assert.Equal(t, tc.src, oracles.applied)
 				assert.Contains(t, string(mergeResult.Content), "<<<<<<< Current")
 				assert.Contains(t, string(mergeResult.Content), ">>>>>>> Incoming patch")
@@ -109,7 +108,7 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 				require.True(t, rejectOracles.rejected)
 				rejectResult, rejectErr := runLibraryApply(t, tc, true)
 				require.Error(t, rejectErr)
-				var applyErr *git_diff_parser.ApplyError
+				var applyErr *applyError
 				require.ErrorAs(t, rejectErr, &applyErr)
 				require.NotEqual(t, tc.src, rejectOracles.applied)
 				assert.Equal(t, tc.src, rejectResult.Content)
@@ -128,17 +127,17 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 	}
 }
 
-func runLibraryApply(t *testing.T, tc parityCase, rejectMode bool) (git_diff_parser.ApplyResult, error) {
+func runLibraryApply(t *testing.T, tc parityCase, rejectMode bool) (applyResult, error) {
 	t.Helper()
 
-	options := git_diff_parser.DefaultApplyOptions()
+	options := defaultApplyOptions()
 	options.IgnoreWhitespace = tc.fixture.IgnoreWhitespace
 	options.Reverse = fixtureHasGitArg(tc.fixture, "--reverse")
 	if rejectMode {
-		options.Mode = git_diff_parser.ApplyModeApply
+		options.Mode = applyModeApply
 	}
 
-	return git_diff_parser.ApplyFileWithOptions(tc.src, tc.patch, options)
+	return applyFileWithOptions(tc.src, tc.patch, options)
 }
 
 func trimGitRejectHeader(rej []byte) []byte {

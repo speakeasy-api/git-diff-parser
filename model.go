@@ -5,28 +5,28 @@ import (
 	"strings"
 )
 
-type ContentChangeType string
+type contentChangeType string
 
 const (
-	ContentChangeTypeAdd    ContentChangeType = "add"
-	ContentChangeTypeDelete ContentChangeType = "delete"
-	ContentChangeTypeModify ContentChangeType = "modify"
-	ContentChangeTypeNOOP   ContentChangeType = ""
+	contentChangeTypeAdd    contentChangeType = "add"
+	contentChangeTypeDelete contentChangeType = "delete"
+	contentChangeTypeModify contentChangeType = "modify"
+	contentChangeTypeNOOP   contentChangeType = ""
 )
 
-// ContentChange is a part of the line that starts with ` `, `-`, `+`.
-// Consecutive ContentChange build a line.
-// A `~` is a special case of ContentChange that is used to indicate a new line.
-type ContentChange struct {
-	Type ContentChangeType `json:"type"`
+// contentChange is a part of the line that starts with ` `, `-`, `+`.
+// Consecutive contentChange build a line.
+// A `~` is a special case of contentChange that is used to indicate a new line.
+type contentChange struct {
+	Type contentChangeType `json:"type"`
 	From string            `json:"from"`
 	To   string            `json:"to"`
 }
 
-type ChangeList []ContentChange
+type changeList []contentChange
 
-// HunkLine keeps a normalized, apply-friendly view of a hunk line.
-type HunkLine struct {
+// hunkLine keeps a normalized, apply-friendly view of a hunk line.
+type hunkLine struct {
 	Kind       byte   `json:"kind"`
 	Text       string `json:"text"`
 	HasNewline bool   `json:"has_newline"`
@@ -34,11 +34,11 @@ type HunkLine struct {
 	NewEOF     bool   `json:"new_eof,omitempty"`
 }
 
-func (l *HunkLine) MarkNoNewline() {
+func (l *hunkLine) markNoNewline() {
 	l.HasNewline = false
 }
 
-func (h *Hunk) MarkEOFMarkers() {
+func (h *hunk) markEOFMarkers() {
 	oldSeen := 0
 	newSeen := 0
 
@@ -59,7 +59,7 @@ func (h *Hunk) MarkEOFMarkers() {
 	}
 }
 
-// Hunk is a line that starts with @@.
+// hunk is a line that starts with @@.
 // Each hunk shows one area where the files differ.
 // Unified format hunks look like this:
 // @@ from-file-line-numbers to-file-line-numbers @@
@@ -68,25 +68,25 @@ func (h *Hunk) MarkEOFMarkers() {
 //	line-from-either-file…
 //
 // If a hunk contains just one line, only its start line number appears. Otherwise its line numbers look like ‘start,count’. An empty hunk is considered to start at the line that follows the hunk.
-type Hunk struct {
-	ChangeList         ChangeList `json:"change_list"`
-	Lines              []HunkLine `json:"lines,omitempty"`
+type hunk struct {
+	ChangeList         changeList `json:"change_list"`
+	Lines              []hunkLine `json:"lines,omitempty"`
 	StartLineNumberOld int        `json:"start_line_number_old"`
 	CountOld           int        `json:"count_old"`
 	StartLineNumberNew int        `json:"start_line_number_new"`
 	CountNew           int        `json:"count_new"`
 }
 
-func (changes *ChangeList) IsSignificant() bool {
+func (changes *changeList) isSignificant() bool {
 	for _, change := range *changes {
-		if change.Type != ContentChangeTypeNOOP {
+		if change.Type != contentChangeTypeNOOP {
 			return true
 		}
 	}
 	return false
 }
 
-func (h Hunk) GoString() string {
+func (h hunk) GoString() string {
 	return fmt.Sprintf(
 		"git_diff_parser.Hunk{ChangeList:%#v, StartLineNumberOld:%d, CountOld:%d, StartLineNumberNew:%d, CountNew:%d}",
 		h.ChangeList,
@@ -97,33 +97,33 @@ func (h Hunk) GoString() string {
 	)
 }
 
-type FileDiffType string
+type fileDiffType string
 
 const (
-	FileDiffTypeAdded    FileDiffType = "add"
-	FileDiffTypeDeleted  FileDiffType = "delete"
-	FileDiffTypeModified FileDiffType = "modify"
+	fileDiffTypeAdded    fileDiffType = "add"
+	fileDiffTypeDeleted  fileDiffType = "delete"
+	fileDiffTypeModified fileDiffType = "modify"
 )
 
-type BinaryDeltaType string
+type binaryDeltaType string
 
 const (
-	BinaryDeltaTypeLiteral BinaryDeltaType = "literal"
-	BinaryDeltaTypeDelta   BinaryDeltaType = "delta"
+	binaryDeltaTypeLiteral binaryDeltaType = "literal"
+	binaryDeltaTypeDelta   binaryDeltaType = "delta"
 )
 
-type BinaryPatch struct {
-	Type    BinaryDeltaType `json:"type"`
+type binaryPatch struct {
+	Type    binaryDeltaType `json:"type"`
 	Count   int
 	Content string
 }
 
-// FileDiff Source of truth: https://github.com/git/git/blob/master/diffcore.h#L106
+// fileDiff Source of truth: https://github.com/git/git/blob/master/diffcore.h#L106
 // Implemented in https://github.com/git/git/blob/master/diff.c#L3496
-type FileDiff struct {
+type fileDiff struct {
 	FromFile           string        `json:"from_file"`
 	ToFile             string        `json:"to_file"`
-	Type               FileDiffType  `json:"type"`
+	Type               fileDiffType  `json:"type"`
 	IsBinary           bool          `json:"is_binary"`
 	OldMode            string        `json:"old_mode,omitempty"`
 	NewMode            string        `json:"new_mode,omitempty"`
@@ -136,11 +136,11 @@ type FileDiff struct {
 	RenameTo           string        `json:"rename_to,omitempty"`
 	CopyFrom           string        `json:"copy_from,omitempty"`
 	CopyTo             string        `json:"copy_to,omitempty"`
-	Hunks              []Hunk        `json:"hunks"`
-	BinaryPatch        []BinaryPatch `json:"binary_patch"`
+	Hunks              []hunk        `json:"hunks"`
+	BinaryPatch        []binaryPatch `json:"binary_patch"`
 }
 
-func (fd FileDiff) GoString() string {
+func (fd fileDiff) GoString() string {
 	return fmt.Sprintf(
 		"&git_diff_parser.FileDiff{FromFile:%#v, ToFile:%#v, Type:%#v, IsBinary:%t, NewMode:%#v, Hunks:%#v, BinaryPatch:%#v}",
 		fd.FromFile,
@@ -153,6 +153,6 @@ func (fd FileDiff) GoString() string {
 	)
 }
 
-type Diff struct {
-	FileDiff []FileDiff `json:"file_diff"`
+type diff struct {
+	FileDiff []fileDiff `json:"file_diff"`
 }
