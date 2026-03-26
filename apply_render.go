@@ -2,8 +2,8 @@ package git_diff_parser
 
 import "bytes"
 
-func renderApplyResult(pristine []byte, outcome applyOutcome, options ApplyOptions) ApplyResult {
-	result := ApplyResult{
+func renderApplyResult(pristine []byte, outcome applyOutcome, options applyOptions) applyResult {
+	result := applyResult{
 		Content: joinFileLines(outcome.content),
 		Reject:  renderRejectContent(outcome.rejectHead, outcome.conflicts),
 	}
@@ -13,7 +13,7 @@ func renderApplyResult(pristine []byte, outcome applyOutcome, options ApplyOptio
 	}
 
 	switch options.Mode {
-	case ApplyModeMerge:
+	case applyModeMerge:
 		result.Content = renderMergeContent(outcome.content, outcome.conflicts, options.ConflictLabels)
 		result.MergeConflicts = len(outcome.conflicts)
 	default:
@@ -24,7 +24,7 @@ func renderApplyResult(pristine []byte, outcome applyOutcome, options ApplyOptio
 	return result
 }
 
-func renderMergeContent(base []fileLine, conflicts []applyConflict, labels ConflictLabels) []byte {
+func renderMergeContent(base []fileLine, conflicts []applyConflict, labels conflictLabels) []byte {
 	if len(conflicts) == 0 {
 		return joinFileLines(base)
 	}
@@ -74,7 +74,7 @@ func renderRejectContent(header string, conflicts []applyConflict) []byte {
 	return buf.Bytes()
 }
 
-func renderConflictLines(labels ConflictLabels, ours, theirs []fileLine) []fileLine {
+func renderConflictLines(labels conflictLabels, ours, theirs []fileLine) []fileLine {
 	lines := []fileLine{
 		{text: "<<<<<<< " + labels.Current, hasNewline: true},
 	}

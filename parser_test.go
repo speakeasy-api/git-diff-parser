@@ -1,4 +1,4 @@
-package git_diff_parser_test
+package git_diff_parser
 
 import (
 	"embed"
@@ -8,8 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	git_diff_parser "github.com/speakeasy-api/git-diff-parser"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,7 +59,7 @@ func TestParse(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, msg, err := git_diff_parser.SignificantChange(test.input, func(diff *git_diff_parser.FileDiff, change *git_diff_parser.ContentChange) (bool, string) {
+			got, msg, err := significantChange(test.input, func(diff *fileDiff, change *contentChange) (bool, string) {
 				if diff.ToFile == "gen.yaml" || diff.ToFile == "RELEASES.md" {
 					return false, ""
 				}
@@ -75,17 +73,17 @@ func TestParse(t *testing.T) {
 					return false, ""
 				}
 
-				if diff.Type == git_diff_parser.FileDiffTypeModified {
+				if diff.Type == fileDiffTypeModified {
 					return true, fmt.Sprintf("significant diff %#v", diff)
 				}
-				if change.Type == git_diff_parser.ContentChangeTypeNOOP {
+				if change.Type == contentChangeTypeNOOP {
 					return false, ""
 				}
 
 				return true, fmt.Sprintf("significant change %#v in %s", change, diff.ToFile)
 			})
 			require.NoError(t, err)
-			MatchMessageSnapshot(t, test.relativePath+".msg", msg)
+			MatchMessageSnapshot(t, test.relativePath+".msg", normalizeSnapshotTypes(msg))
 			assert.Equal(t, test.want, got)
 		})
 	}
@@ -110,14 +108,14 @@ new mode 100755
 \ No newline at end of file
 `
 
-	parsed, errs := git_diff_parser.Parse(diff)
+	parsed, errs := parse(diff)
 	require.Empty(t, errs)
 	require.Len(t, parsed.FileDiff, 1)
 
 	fileDiff := parsed.FileDiff[0]
 	assert.Equal(t, "src.txt", fileDiff.FromFile)
 	assert.Equal(t, "dst.txt", fileDiff.ToFile)
-	assert.Equal(t, git_diff_parser.FileDiffTypeModified, fileDiff.Type)
+	assert.Equal(t, fileDiffTypeModified, fileDiff.Type)
 	assert.Equal(t, "1234567", fileDiff.IndexOld)
 	assert.Equal(t, "89abcde", fileDiff.IndexNew)
 	assert.Equal(t, "100755", fileDiff.IndexMode)
@@ -167,4 +165,14 @@ func MatchMessageSnapshot(t *testing.T, snapshotName string, content string) {
 	f, err := os.ReadFile(snapshotFile)
 	require.NoError(t, err)
 	require.Equal(t, string(f), content)
+}
+
+func normalizeSnapshotTypes(content string) string {
+	replacer := strings.NewReplacer(
+		"git_diff_parser.contentChange", "git_diff_parser.ContentChange",
+		"git_diff_parser.changeList", "git_diff_parser.ChangeList",
+		"git_diff_parser.hunk", "git_diff_parser.Hunk",
+		"git_diff_parser.binaryPatch", "git_diff_parser.BinaryPatch",
+	)
+	return replacer.Replace(content)
 }

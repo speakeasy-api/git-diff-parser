@@ -30,36 +30,31 @@ type fileLine struct {
 }
 
 func ApplyFile(pristine, patchData []byte) ([]byte, error) {
-	result, err := ApplyFileWithOptions(pristine, patchData, DefaultApplyOptions())
+	result, err := applyFileWithOptions(pristine, patchData, defaultApplyOptions())
 	return result.Content, err
 }
 
-func ApplyFileWithOptions(pristine, patchData []byte, options ApplyOptions) (ApplyResult, error) {
-	return NewPatchApply(options).applyFileWithResult(pristine, patchData)
+func applyFileWithOptions(pristine, patchData []byte, options applyOptions) (applyResult, error) {
+	return newPatchApply(options).applyFileWithResult(pristine, patchData)
 }
 
-func (p *PatchApply) ApplyFile(pristine, patchData []byte) ([]byte, error) {
+func (p *patchApply) applyFile(pristine, patchData []byte) ([]byte, error) {
 	result, err := p.applyFileWithResult(pristine, patchData)
 	return result.Content, err
 }
 
-func (p *PatchApply) applyFileWithResult(pristine, patchData []byte) (ApplyResult, error) {
+func (p *patchApply) applyFileWithResult(pristine, patchData []byte) (applyResult, error) {
 	patch, err := p.validateAndParsePatch(patchData)
 	if err != nil {
-		return ApplyResult{}, err
+		return applyResult{}, err
 	}
 	return p.applyValidatedPatch(pristine, patch)
 }
 
-// ApplyPatch is kept as a compatibility alias.
-func ApplyPatch(pristine, patchData []byte) ([]byte, error) {
-	return ApplyFile(pristine, patchData)
-}
-
-func (p *PatchApply) applyValidatedPatch(pristine []byte, patch validatedPatch) (ApplyResult, error) {
+func (p *patchApply) applyValidatedPatch(pristine []byte, patch validatedPatch) (applyResult, error) {
 	outcome, err := p.newApplySession(pristine).apply(patch)
 	if err != nil {
-		return ApplyResult{}, err
+		return applyResult{}, err
 	}
 
 	result := renderApplyResult(pristine, outcome, p.options)
@@ -67,23 +62,23 @@ func (p *PatchApply) applyValidatedPatch(pristine []byte, patch validatedPatch) 
 		return result, nil
 	}
 
-	if p.options.Mode == ApplyModeMerge {
-		return result, &ApplyError{
+	if p.options.Mode == applyModeMerge {
+		return result, &applyError{
 			MergeConflicts:   len(outcome.conflicts),
 			ConflictingHunks: len(outcome.conflicts),
 		}
 	}
 
-	return result, &ApplyError{DirectMisses: len(outcome.conflicts)}
+	return result, &applyError{DirectMisses: len(outcome.conflicts)}
 }
 
-func validateApplyFileDiff(fileDiff FileDiff) error {
+func validateApplyFileDiff(fileDiff fileDiff) error {
 	switch {
 	case fileDiff.IsBinary:
 		return errors.New("binary patches are not supported")
 	case fileDiff.NewMode != "":
 		return errors.New("file mode changes are not supported")
-	case fileDiff.Type == FileDiffTypeAdded || fileDiff.Type == FileDiffTypeDeleted:
+	case fileDiff.Type == fileDiffTypeAdded || fileDiff.Type == fileDiffTypeDeleted:
 		return errors.New("patches may only modify existing files")
 	case len(fileDiff.Hunks) == 0:
 		return errors.New("patch contains no hunks")
@@ -96,10 +91,10 @@ func validateApplyFileDiff(fileDiff FileDiff) error {
 	}
 }
 
-func fileDiffHasChanges(fileDiff FileDiff) bool {
+func fileDiffHasChanges(fileDiff fileDiff) bool {
 	for _, hunk := range fileDiff.Hunks {
 		for _, change := range hunk.ChangeList {
-			if change.Type != ContentChangeTypeNOOP {
+			if change.Type != contentChangeTypeNOOP {
 				return true
 			}
 		}

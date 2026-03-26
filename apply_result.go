@@ -9,7 +9,7 @@ var ErrPatchConflict = errors.New("patch conflict")
 
 // ApplyResult captures the patched content and the type of misses encountered
 // while attempting to apply it.
-type ApplyResult struct {
+type applyResult struct {
 	Content        []byte
 	Reject         []byte
 	DirectMisses   int
@@ -29,8 +29,8 @@ type applyConflict struct {
 	theirs []fileLine
 }
 
-// ApplyError reports the aggregate apply outcome.
-type ApplyError struct {
+// applyError reports the aggregate apply outcome.
+type applyError struct {
 	DirectMisses   int
 	MergeConflicts int
 	// ConflictingHunks keeps the legacy count available for callers that still
@@ -38,7 +38,7 @@ type ApplyError struct {
 	ConflictingHunks int
 }
 
-func (e *ApplyError) Error() string {
+func (e *applyError) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
@@ -64,9 +64,6 @@ func (e *ApplyError) Error() string {
 	return "patch apply failed"
 }
 
-func (e *ApplyError) Is(target error) bool {
+func (e *applyError) Is(target error) bool {
 	return target == ErrPatchConflict
 }
-
-// ConflictError is kept as a compatibility alias for the old public type.
-type ConflictError = ApplyError

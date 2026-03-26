@@ -8,7 +8,7 @@ type validatedPatch struct {
 }
 
 type applySession struct {
-	applier     *PatchApply
+	applier     *patchApply
 	sourceLines []fileLine
 	image       []fileLine
 	cursor      int
@@ -22,9 +22,9 @@ type matchedHunk struct {
 	hunkEnd     int
 }
 
-func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, error) {
+func (p *patchApply) validateAndParsePatch(patchData []byte) (validatedPatch, error) {
 	normalizedPatch := normalizePatchForValidation(patchData)
-	parsed, errs := Parse(string(normalizedPatch))
+	parsed, errs := parse(string(normalizedPatch))
 	if len(errs) > 0 {
 		return validatedPatch{}, fmt.Errorf("unsupported patch syntax: %w", errs[0])
 	}
@@ -52,7 +52,7 @@ func (p *PatchApply) validateAndParsePatch(patchData []byte) (validatedPatch, er
 	}, nil
 }
 
-func (p *PatchApply) newApplySession(pristine []byte) *applySession {
+func (p *patchApply) newApplySession(pristine []byte) *applySession {
 	sourceLines := splitFileLines(pristine)
 	return &applySession{
 		applier:     p,
@@ -180,7 +180,7 @@ func (s *applySession) findPosForFragment(preferred int, fragment []fileLine) (i
 	return 0, false
 }
 
-func patchHunkFromHunk(hunk Hunk) patchHunk {
+func patchHunkFromHunk(hunk hunk) patchHunk {
 	lines := make([]patchLine, 0, len(hunk.Lines))
 	for _, line := range hunk.Lines {
 		lines = append(lines, patchLine{
@@ -202,7 +202,7 @@ func patchHunkFromHunk(hunk Hunk) patchHunk {
 	}
 }
 
-func formatRejectHeader(fileDiff FileDiff) string {
+func formatRejectHeader(fileDiff fileDiff) string {
 	path := firstNonEmpty(fileDiff.ToFile, fileDiff.FromFile)
 	if path == "" {
 		return ""
@@ -210,7 +210,7 @@ func formatRejectHeader(fileDiff FileDiff) string {
 	return "diff a/" + path + " b/" + path + "\t(rejected hunks)"
 }
 
-func formatPatchHunkHeader(hunk Hunk) string {
+func formatPatchHunkHeader(hunk hunk) string {
 	oldRange := formatPatchHunkRange(hunk.StartLineNumberOld, hunk.CountOld)
 	newRange := formatPatchHunkRange(hunk.StartLineNumberNew, hunk.CountNew)
 	return fmt.Sprintf("@@ -%s +%s @@", oldRange, newRange)

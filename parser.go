@@ -8,13 +8,13 @@ import (
 	"strings"
 )
 
-var ErrUnhandled = errors.New("unhandled git diff syntax")
+var errUnhandled = errors.New("unhandled git diff syntax")
 
-func NewHunk(line string) (Hunk, error) {
+func newHunk(line string) (hunk, error) {
 	namedHunkRegex := regexp.MustCompile(`(?m)^@@ -(?P<start_old>\d+),?(?P<count_old>\d+)? \+(?P<start_new>\d+),?(?P<count_new>\d+)? @@`)
 	match := namedHunkRegex.FindStringSubmatch(line)
 	if len(match) == 0 {
-		return Hunk{}, fmt.Errorf("invalid hunk header: %q", line)
+		return hunk{}, fmt.Errorf("invalid hunk header: %q", line)
 	}
 	result := make(map[string]string)
 	for i, name := range namedHunkRegex.SubexpNames() {
@@ -24,7 +24,7 @@ func NewHunk(line string) (Hunk, error) {
 	}
 	startLineNumberOld, err := strconv.Atoi(result["start_old"])
 	if err != nil {
-		return Hunk{}, fmt.Errorf("failed to parse start line number old: %w", err)
+		return hunk{}, fmt.Errorf("failed to parse start line number old: %w", err)
 	}
 	countOld, err := strconv.Atoi(result["count_old"])
 	if err != nil {
@@ -32,13 +32,13 @@ func NewHunk(line string) (Hunk, error) {
 	}
 	startLineNumberNew, err := strconv.Atoi(result["start_new"])
 	if err != nil {
-		return Hunk{}, fmt.Errorf("failed to parse start line number new: %w", err)
+		return hunk{}, fmt.Errorf("failed to parse start line number new: %w", err)
 	}
 	countNew, err := strconv.Atoi(result["count_new"])
 	if err != nil {
 		countNew = 1
 	}
-	return Hunk{
+	return hunk{
 		StartLineNumberOld: startLineNumberOld,
 		CountOld:           countOld,
 		StartLineNumberNew: startLineNumberNew,
@@ -46,18 +46,18 @@ func NewHunk(line string) (Hunk, error) {
 	}, nil
 }
 
-type ParserMode int
+type parserMode int
 
 const (
-	modeHeader ParserMode = iota
+	modeHeader parserMode = iota
 	modeHunk
 	modeBinary
 )
 
 type parser struct {
-	diff Diff
+	diff diff
 	err  []error
-	mode ParserMode
+	mode parserMode
 }
 
 func (p *parser) VisitLine(diff string) {
@@ -76,44 +76,44 @@ func (p *parser) VisitLine(diff string) {
 
 	fileHEAD := len(p.diff.FileDiff) - 1
 	if fileHEAD < 0 {
-		p.err = append(p.err, fmt.Errorf("%w: %s", ErrUnhandled, line))
+		p.err = append(p.err, fmt.Errorf("%w: %s", errUnhandled, line))
 		return
 	}
 
 	hunkHEAD := len(p.diff.FileDiff[fileHEAD].Hunks) - 1
 	if hunkHEAD < 0 {
-		p.err = append(p.err, fmt.Errorf("%w: %s", ErrUnhandled, diff))
+		p.err = append(p.err, fmt.Errorf("%w: %s", errUnhandled, diff))
 		return
 	}
 
 	hunk := &p.diff.FileDiff[fileHEAD].Hunks[hunkHEAD]
 
 	// swallow extra, unused lines from start
-	if strings.HasPrefix(line, "~") && !hunk.ChangeList.IsSignificant() {
+	if strings.HasPrefix(line, "~") && !hunk.ChangeList.isSignificant() {
 		hunk.StartLineNumberOld++
 		hunk.StartLineNumberNew++
 		hunk.CountOld--
 		hunk.CountNew--
-		hunk.ChangeList = []ContentChange{}
+		hunk.ChangeList = []contentChange{}
 	}
 
 	if strings.HasPrefix(line, "+") {
-		if len(hunk.ChangeList) > 0 && hunk.ChangeList[len(hunk.ChangeList)-1].Type == ContentChangeTypeDelete {
-			hunk.ChangeList[len(hunk.ChangeList)-1].Type = ContentChangeTypeModify
+		if len(hunk.ChangeList) > 0 && hunk.ChangeList[len(hunk.ChangeList)-1].Type == contentChangeTypeDelete {
+			hunk.ChangeList[len(hunk.ChangeList)-1].Type = contentChangeTypeModify
 			hunk.ChangeList[len(hunk.ChangeList)-1].To = trimSingleLineEnding(strings.TrimPrefix(line, "+"))
-			hunk.Lines = append(hunk.Lines, HunkLine{
+			hunk.Lines = append(hunk.Lines, hunkLine{
 				Kind:       '+',
 				Text:       trimSingleLineEnding(strings.TrimPrefix(line, "+")),
 				HasNewline: hasNewline,
 			})
 			return
 		}
-		hunk.ChangeList = append(hunk.ChangeList, ContentChange{
-			Type: ContentChangeTypeAdd,
+		hunk.ChangeList = append(hunk.ChangeList, contentChange{
+			Type: contentChangeTypeAdd,
 			From: "",
 			To:   trimSingleLineEnding(strings.TrimPrefix(line, "+")),
 		})
-		hunk.Lines = append(hunk.Lines, HunkLine{
+		hunk.Lines = append(hunk.Lines, hunkLine{
 			Kind:       '+',
 			Text:       trimSingleLineEnding(strings.TrimPrefix(line, "+")),
 			HasNewline: hasNewline,
@@ -122,12 +122,12 @@ func (p *parser) VisitLine(diff string) {
 	}
 
 	if strings.HasPrefix(line, "-") {
-		hunk.ChangeList = append(hunk.ChangeList, ContentChange{
-			Type: ContentChangeTypeDelete,
+		hunk.ChangeList = append(hunk.ChangeList, contentChange{
+			Type: contentChangeTypeDelete,
 			From: trimSingleLineEnding(strings.TrimPrefix(line, "-")),
 			To:   "",
 		})
-		hunk.Lines = append(hunk.Lines, HunkLine{
+		hunk.Lines = append(hunk.Lines, hunkLine{
 			Kind:       '-',
 			Text:       trimSingleLineEnding(strings.TrimPrefix(line, "-")),
 			HasNewline: hasNewline,
@@ -136,12 +136,12 @@ func (p *parser) VisitLine(diff string) {
 	}
 
 	if strings.HasPrefix(line, " ") {
-		hunk.ChangeList = append(hunk.ChangeList, ContentChange{
-			Type: ContentChangeTypeNOOP,
+		hunk.ChangeList = append(hunk.ChangeList, contentChange{
+			Type: contentChangeTypeNOOP,
 			From: line,
 			To:   line,
 		})
-		hunk.Lines = append(hunk.Lines, HunkLine{
+		hunk.Lines = append(hunk.Lines, hunkLine{
 			Kind:       ' ',
 			Text:       trimSingleLineEnding(strings.TrimPrefix(line, " ")),
 			HasNewline: hasNewline,
@@ -150,8 +150,8 @@ func (p *parser) VisitLine(diff string) {
 	}
 
 	if line == "~" {
-		hunk.ChangeList = append(hunk.ChangeList, ContentChange{
-			Type: ContentChangeTypeNOOP,
+		hunk.ChangeList = append(hunk.ChangeList, contentChange{
+			Type: contentChangeTypeNOOP,
 			From: "\n",
 			To:   "\n",
 		})
@@ -160,13 +160,13 @@ func (p *parser) VisitLine(diff string) {
 
 	if strings.HasPrefix(line, `\ No newline at end of file`) {
 		if n := len(hunk.Lines); n > 0 {
-			hunk.Lines[n-1].MarkNoNewline()
+			hunk.Lines[n-1].markNoNewline()
 		} else {
 			p.err = append(p.err, fmt.Errorf("unexpected no-newline marker without a preceding patch line"))
 			return
 		}
-		hunk.ChangeList = append(hunk.ChangeList, ContentChange{
-			Type: ContentChangeTypeNOOP,
+		hunk.ChangeList = append(hunk.ChangeList, contentChange{
+			Type: contentChangeTypeNOOP,
 			From: line,
 			To:   line,
 		})
@@ -174,8 +174,8 @@ func (p *parser) VisitLine(diff string) {
 	}
 
 	if line == "" {
-		hunk.ChangeList = append(hunk.ChangeList, ContentChange{
-			Type: ContentChangeTypeNOOP,
+		hunk.ChangeList = append(hunk.ChangeList, contentChange{
+			Type: contentChangeTypeNOOP,
 			From: line,
 			To:   line,
 		})
@@ -199,7 +199,7 @@ func (p *parser) tryVisitHeader(diff string) bool {
 		return true
 	}
 	if fileHEAD < 0 {
-		p.err = append(p.err, fmt.Errorf("%w: %s", ErrUnhandled, diff))
+		p.err = append(p.err, fmt.Errorf("%w: %s", errUnhandled, diff))
 		return true
 	}
 	if p.mode != modeHeader {
@@ -224,22 +224,22 @@ func (p *parser) tryVisitHeader(diff string) bool {
 	}
 	if strings.HasPrefix(diff, "copy from ") {
 		p.diff.FileDiff[fileHEAD].CopyFrom = strings.TrimPrefix(diff, "copy from ")
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		return true
 	}
 	if strings.HasPrefix(diff, "copy to ") {
 		p.diff.FileDiff[fileHEAD].CopyTo = strings.TrimPrefix(diff, "copy to ")
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		return true
 	}
 	if strings.HasPrefix(diff, "rename from ") {
 		p.diff.FileDiff[fileHEAD].RenameFrom = strings.TrimPrefix(diff, "rename from ")
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		return true
 	}
 	if strings.HasPrefix(diff, "rename to ") {
 		p.diff.FileDiff[fileHEAD].RenameTo = strings.TrimPrefix(diff, "rename to ")
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		return true
 	}
 
@@ -248,7 +248,7 @@ func (p *parser) tryVisitHeader(diff string) bool {
 	}
 
 	if strings.HasPrefix(diff, "GIT binary patch") {
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		p.diff.FileDiff[fileHEAD].IsBinary = true
 		p.mode = modeBinary
 		return true
@@ -269,23 +269,23 @@ func (p *parser) tryVisitHeader(diff string) bool {
 
 func (p *parser) visitFileModeHeader(diff string, fileHEAD int) bool {
 	if strings.HasPrefix(diff, "new file mode ") {
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		p.diff.FileDiff[fileHEAD].NewMode = strings.TrimPrefix(diff, "new file mode ")
 		return true
 	}
 	if strings.HasPrefix(diff, "new mode ") {
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		p.diff.FileDiff[fileHEAD].NewMode = strings.TrimPrefix(diff, "new mode ")
 		return true
 	}
 
 	if strings.HasPrefix(diff, "deleted file mode ") {
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeDeleted
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeDeleted
 		p.diff.FileDiff[fileHEAD].OldMode = strings.TrimPrefix(diff, "deleted file mode ")
 		return true
 	}
 	if strings.HasPrefix(diff, "old mode ") {
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		p.diff.FileDiff[fileHEAD].OldMode = strings.TrimPrefix(diff, "old mode ")
 		return true
 	}
@@ -317,27 +317,27 @@ func (p *parser) tryVisitBinary(diff string) bool {
 		return true
 	}
 	if strings.HasPrefix(diff, "delta ") {
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		startByteCount, err := strconv.Atoi(strings.Split(diff, " ")[1])
 		if err != nil {
 			return true
 		}
 
-		p.diff.FileDiff[fileHEAD].BinaryPatch = append(p.diff.FileDiff[fileHEAD].BinaryPatch, BinaryPatch{
-			Type:    BinaryDeltaTypeDelta,
+		p.diff.FileDiff[fileHEAD].BinaryPatch = append(p.diff.FileDiff[fileHEAD].BinaryPatch, binaryPatch{
+			Type:    binaryDeltaTypeDelta,
 			Count:   startByteCount,
 			Content: "",
 		})
 		return true
 	}
 	if strings.HasPrefix(diff, "literal ") {
-		p.diff.FileDiff[fileHEAD].Type = FileDiffTypeModified
+		p.diff.FileDiff[fileHEAD].Type = fileDiffTypeModified
 		startByteCount, err := strconv.Atoi(strings.Split(diff, " ")[1])
 		if err != nil {
 			return true
 		}
-		p.diff.FileDiff[fileHEAD].BinaryPatch = append(p.diff.FileDiff[fileHEAD].BinaryPatch, BinaryPatch{
-			Type:    BinaryDeltaTypeLiteral,
+		p.diff.FileDiff[fileHEAD].BinaryPatch = append(p.diff.FileDiff[fileHEAD].BinaryPatch, binaryPatch{
+			Type:    binaryDeltaTypeLiteral,
 			Count:   startByteCount,
 			Content: "",
 		})
@@ -358,7 +358,7 @@ func (p *parser) tryVisitHunkHeader(diff string) bool {
 	}
 	if strings.HasPrefix(diff, "@@") {
 		p.finalizeCurrentHunk()
-		hunk, err := NewHunk(diff)
+		hunk, err := newHunk(diff)
 		if err != nil {
 			p.err = append(p.err, err)
 		}
@@ -378,10 +378,10 @@ func (p *parser) finalizeCurrentHunk() {
 	if len(hunks) == 0 {
 		return
 	}
-	p.diff.FileDiff[fileHEAD].Hunks[len(hunks)-1].MarkEOFMarkers()
+	p.diff.FileDiff[fileHEAD].Hunks[len(hunks)-1].markEOFMarkers()
 }
 
-func (p *parser) parseDiffLine(line string) FileDiff {
+func (p *parser) parseDiffLine(line string) fileDiff {
 	line = trimSingleLineEnding(line)
 	filesStr := line[11:]
 	var oldPath, newPath string
@@ -410,7 +410,7 @@ func (p *parser) parseDiffLine(line string) FileDiff {
 		newPath = segs[1][3 : len(segs[1])-1]
 	}
 
-	return FileDiff{
+	return fileDiff{
 		FromFile: oldPath,
 		ToFile:   newPath,
 	}
@@ -425,8 +425,8 @@ func parsePercentValue(raw string) int {
 	return value
 }
 
-// Converts git diff --word-diff=porcelain output to a Diff object.
-func Parse(diff string) (Diff, []error) {
+// Converts git diff --word-diff=porcelain output to a diff object.
+func parse(diff string) (diff, []error) {
 	p := parser{}
 	lines := splitLinesPreserveNewline(diff)
 	for i := 0; i < len(lines); i++ {
@@ -441,13 +441,13 @@ func Parse(diff string) (Diff, []error) {
 
 // SignificantChange Allows a structured diff to be passed into the `isSignificant` function to determine significance. That function can return a message, which is optionally passed as the final argument
 // Returns the first significant change found, or false if non found.
-func SignificantChange(diff string, isSignificant func(*FileDiff, *ContentChange) (bool, string)) (bool, string, error) {
-	parsed, err := Parse(diff)
+func significantChange(diff string, isSignificant func(*fileDiff, *contentChange) (bool, string)) (bool, string, error) {
+	parsed, err := parse(diff)
 	if len(err) > 0 {
 		return true, "", fmt.Errorf("failed to parse diff: %w", err[0])
 	}
 	for _, fileDiff := range parsed.FileDiff {
-		if significant, msg := isSignificant(&fileDiff, &ContentChange{}); significant {
+		if significant, msg := isSignificant(&fileDiff, &contentChange{}); significant {
 			return true, msg, nil
 		}
 

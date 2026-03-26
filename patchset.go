@@ -8,54 +8,54 @@ import (
 )
 
 var (
-	ErrPatchCreate     = errors.New("patch creates are not supported")
-	ErrPatchDelete     = errors.New("patch deletes are not supported")
-	ErrPatchRename     = errors.New("patch renames are not supported")
-	ErrPatchModeChange = errors.New("patch mode changes are not supported")
-	ErrPatchBinary     = errors.New("binary patches are not supported")
+	errPatchCreate     = errors.New("patch creates are not supported")
+	errPatchDelete     = errors.New("patch deletes are not supported")
+	errPatchRename     = errors.New("patch renames are not supported")
+	errPatchModeChange = errors.New("patch mode changes are not supported")
+	errPatchBinary     = errors.New("binary patches are not supported")
 )
 
-type PatchsetOperation string
+type patchsetOperation string
 
 const (
-	PatchsetOperationCreate     PatchsetOperation = "create"
-	PatchsetOperationDelete     PatchsetOperation = "delete"
-	PatchsetOperationRename     PatchsetOperation = "rename"
-	PatchsetOperationCopy       PatchsetOperation = "copy"
-	PatchsetOperationModeChange PatchsetOperation = "mode change"
-	PatchsetOperationBinary     PatchsetOperation = "binary"
+	patchsetOperationCreate     patchsetOperation = "create"
+	patchsetOperationDelete     patchsetOperation = "delete"
+	patchsetOperationRename     patchsetOperation = "rename"
+	patchsetOperationCopy       patchsetOperation = "copy"
+	patchsetOperationModeChange patchsetOperation = "mode change"
+	patchsetOperationBinary     patchsetOperation = "binary"
 )
 
-type UnsupportedPatchError struct {
-	Operation PatchsetOperation
+type unsupportedPatchError struct {
+	Operation patchsetOperation
 	Path      string
 	From      string
 	To        string
 }
 
-func (e *UnsupportedPatchError) Error() string {
+func (e *unsupportedPatchError) Error() string {
 	switch e.Operation {
-	case PatchsetOperationCreate:
+	case patchsetOperationCreate:
 		if e.Path != "" {
 			return fmt.Sprintf("patch creates are not supported for %q", e.Path)
 		}
 		return "patch creates are not supported"
-	case PatchsetOperationDelete:
+	case patchsetOperationDelete:
 		if e.Path != "" {
 			return fmt.Sprintf("patch deletes are not supported for %q", e.Path)
 		}
 		return "patch deletes are not supported"
-	case PatchsetOperationRename:
+	case patchsetOperationRename:
 		if e.From != "" || e.To != "" {
 			return fmt.Sprintf("patch renames are not supported: %q -> %q", e.From, e.To)
 		}
 		return "patch renames are not supported"
-	case PatchsetOperationModeChange:
+	case patchsetOperationModeChange:
 		if e.Path != "" {
 			return fmt.Sprintf("patch mode changes are not supported for %q", e.Path)
 		}
 		return "patch mode changes are not supported"
-	case PatchsetOperationBinary:
+	case patchsetOperationBinary:
 		if e.Path != "" {
 			return fmt.Sprintf("binary patches are not supported for %q", e.Path)
 		}
@@ -65,57 +65,57 @@ func (e *UnsupportedPatchError) Error() string {
 	}
 }
 
-func (e *UnsupportedPatchError) Is(target error) bool {
+func (e *unsupportedPatchError) Is(target error) bool {
 	switch target {
-	case ErrPatchCreate:
-		return e.Operation == PatchsetOperationCreate
-	case ErrPatchDelete:
-		return e.Operation == PatchsetOperationDelete
-	case ErrPatchRename:
-		return e.Operation == PatchsetOperationRename
-	case ErrPatchModeChange:
-		return e.Operation == PatchsetOperationModeChange
-	case ErrPatchBinary:
-		return e.Operation == PatchsetOperationBinary
+	case errPatchCreate:
+		return e.Operation == patchsetOperationCreate
+	case errPatchDelete:
+		return e.Operation == patchsetOperationDelete
+	case errPatchRename:
+		return e.Operation == patchsetOperationRename
+	case errPatchModeChange:
+		return e.Operation == patchsetOperationModeChange
+	case errPatchBinary:
+		return e.Operation == patchsetOperationBinary
 	default:
 		return false
 	}
 }
 
-type Patchset struct {
-	Files []PatchsetFile
+type patchset struct {
+	Files []patchsetFile
 }
 
-type PatchsetFile struct {
-	Diff  FileDiff
+type patchsetFile struct {
+	Diff  fileDiff
 	Patch []byte
 }
 
-func ParsePatchset(patchData []byte) (Patchset, []error) {
-	parsed, errs := Parse(string(patchData))
+func parsePatchset(patchData []byte) (patchset, []error) {
+	parsed, errs := parse(string(patchData))
 	if len(errs) > 0 {
-		return Patchset{}, errs
+		return patchset{}, errs
 	}
 
 	chunks := splitPatchsetChunks(patchData)
 	if len(chunks) != len(parsed.FileDiff) {
-		return Patchset{}, []error{
+		return patchset{}, []error{
 			fmt.Errorf("parsed %d file diffs but split %d patch fragments", len(parsed.FileDiff), len(chunks)),
 		}
 	}
 
-	files := make([]PatchsetFile, len(chunks))
+	files := make([]patchsetFile, len(chunks))
 	for i := range chunks {
-		files[i] = PatchsetFile{
+		files[i] = patchsetFile{
 			Diff:  parsed.FileDiff[i],
 			Patch: chunks[i],
 		}
 	}
 
-	return Patchset{Files: files}, nil
+	return patchset{Files: files}, nil
 }
 
-func (p Patchset) Apply(tree map[string][]byte) (map[string][]byte, error) {
+func (p patchset) apply(tree map[string][]byte) (map[string][]byte, error) {
 	out := cloneTree(tree)
 	for _, file := range p.Files {
 		if err := applyPatchsetFile(out, file); err != nil {
@@ -125,12 +125,12 @@ func (p Patchset) Apply(tree map[string][]byte) (map[string][]byte, error) {
 	return out, nil
 }
 
-func ApplyPatchset(tree map[string][]byte, patchData []byte) (map[string][]byte, error) {
-	patchset, errs := ParsePatchset(patchData)
+func applyPatchset(tree map[string][]byte, patchData []byte) (map[string][]byte, error) {
+	patchset, errs := parsePatchset(patchData)
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("unsupported patch syntax: %w", errs[0])
 	}
-	return patchset.Apply(tree)
+	return patchset.apply(tree)
 }
 
 func cloneTree(tree map[string][]byte) map[string][]byte {
