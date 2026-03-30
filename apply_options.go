@@ -1,5 +1,7 @@
 package git_diff_parser
 
+import "math"
+
 // applyMode controls how the apply engine treats hunks that cannot be placed
 // directly into the target content.
 type applyMode int
@@ -23,6 +25,9 @@ type applyOptions struct {
 	Mode             applyMode
 	ConflictLabels   conflictLabels
 	IgnoreWhitespace bool
+	AllowOverlap     bool
+	MinContext       int
+	MinContextSet    bool
 	Reverse          bool
 	UnidiffZero      bool
 	Recount          bool
@@ -31,7 +36,8 @@ type applyOptions struct {
 
 func defaultApplyOptions() applyOptions {
 	return applyOptions{
-		Mode: applyModeMerge,
+		Mode:       applyModeMerge,
+		MinContext: math.MaxInt,
 		ConflictLabels: conflictLabels{
 			Current:  "Current",
 			Incoming: "Incoming patch",
@@ -54,12 +60,17 @@ func (o applyOptions) normalize() applyOptions {
 	}
 	if o.Mode == applyModeMerge {
 		defaults := defaultApplyOptions()
+		if !o.MinContextSet {
+			o.MinContext = defaults.MinContext
+		}
 		if o.ConflictLabels.Current == "" {
 			o.ConflictLabels.Current = defaults.ConflictLabels.Current
 		}
 		if o.ConflictLabels.Incoming == "" {
 			o.ConflictLabels.Incoming = defaults.ConflictLabels.Incoming
 		}
+	} else if !o.MinContextSet {
+		o.MinContext = defaultApplyOptions().MinContext
 	}
 	return o
 }

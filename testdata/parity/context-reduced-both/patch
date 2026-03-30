@@ -1,0 +1,10 @@
+diff --git a/file.txt b/file.txt
+--- a/file.txt
++++ b/file.txt
+@@ -2,5 +2,5 @@
+ a1
+ a2
+-a3
++A3
+ a4
+ a5

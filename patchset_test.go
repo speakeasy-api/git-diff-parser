@@ -164,6 +164,104 @@ rename to dst.txt
 	assert.Contains(t, err.Error(), "missing file")
 }
 
+func TestPatchsetApply_SameFilenameSequentialDiffs(t *testing.T) {
+	t.Parallel()
+
+	patchData := []byte(`diff --git a/same_fn b/same_fn
+--- a/same_fn
++++ b/same_fn
+@@ -1,13 +1,13 @@
+ a
+ b
+ c
+-d
++z
+ e
+ f
+ g
+ h
+ i
+ j
+ k
+ l
+ m
+diff --git a/same_fn b/same_fn
+--- a/same_fn
++++ b/same_fn
+@@ -1,13 +1,13 @@
+ a
+ b
+ c
+ z
+-e
++y
+ f
+ g
+ h
+ i
+ j
+ k
+ l
+ m
+`)
+
+	tree := map[string][]byte{
+		"same_fn": []byte("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\n"),
+	}
+
+	applied, err := applyPatchset(tree, patchData)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]byte{
+		"same_fn": []byte("a\nb\nc\nz\ny\nf\ng\nh\ni\nj\nk\nl\nm\n"),
+	}, applied)
+}
+
+func TestPatchsetApply_SameFilenameIndependentDiffs(t *testing.T) {
+	t.Parallel()
+
+	patchData := []byte(`diff --git a/same_fn b/same_fn
+--- a/same_fn
++++ b/same_fn
+@@ -1,13 +1,13 @@
+ a
+ b
+ c
+-d
++z
+ e
+ f
+ g
+ h
+ i
+ j
+ k
+ l
+ m
+diff --git a/same_fn b/same_fn
+--- a/same_fn
++++ b/same_fn
+@@ -6,8 +6,8 @@ f
+ g
+ h
+-i
++y
+ j
+ k
+ l
+ m
+`)
+
+	tree := map[string][]byte{
+		"same_fn": []byte("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\n"),
+	}
+
+	applied, err := applyPatchset(tree, patchData)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]byte{
+		"same_fn": []byte("a\nb\nc\nz\ne\nf\ng\nh\ny\nj\nk\nl\nm\n"),
+	}, applied)
+}
+
 func TestPatchsetApply_RejectsBinaryPatches(t *testing.T) {
 	t.Parallel()
 

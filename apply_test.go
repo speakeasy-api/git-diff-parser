@@ -206,31 +206,70 @@ func TestApplyFile_BoundaryCases(t *testing.T) {
 
 	original := []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n")
 	tests := []struct {
-		name string
-		want []byte
+		name             string
+		want             []byte
+		requiresUnidiff0 bool
 	}{
-		{name: "add head", want: []byte("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n")},
-		{name: "insert second", want: []byte("b\na\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n")},
-		{name: "modify head", want: []byte("a\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n")},
-		{name: "delete head", want: []byte("c\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n")},
+		{name: "add head", want: []byte("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n"), requiresUnidiff0: true},
+		{name: "insert second", want: []byte("b\na\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n"), requiresUnidiff0: true},
+		{name: "modify head", want: []byte("a\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n"), requiresUnidiff0: true},
+		{name: "delete head", want: []byte("c\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n"), requiresUnidiff0: true},
 		{name: "add tail", want: []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\nz\n")},
 		{name: "modify tail", want: []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\nz\n")},
 		{name: "delete tail", want: []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\n")},
 	}
 
-	for _, context := range []int{3, 0} {
-		context := context
-		for _, test := range tests {
-			test := test
-			t.Run(test.name+" context "+contextLabel(context), func(t *testing.T) {
-				t.Parallel()
+	for _, test := range tests {
+		test := test
+		t.Run(test.name+" context "+contextLabel(3), func(t *testing.T) {
+			t.Parallel()
 
-				patch := buildPatchWithContext(t, "victim", original, test.want, context)
-				applied, err := ApplyFile(original, patch)
+			patch := buildPatchWithContext(t, "victim", original, test.want, 3)
+			applied, err := ApplyFile(original, patch)
+			require.NoError(t, err)
+			assert.Equal(t, test.want, applied)
+		})
+	}
+}
+
+func TestApplyFileWithOptions_ZeroContextBoundaryCasesRequireUnidiffZero(t *testing.T) {
+	t.Parallel()
+
+	original := []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n")
+	tests := []struct {
+		name             string
+		want             []byte
+		requiresUnidiff0 bool
+	}{
+		{name: "add head", want: []byte("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n"), requiresUnidiff0: true},
+		{name: "insert second", want: []byte("b\na\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n"), requiresUnidiff0: true},
+		{name: "modify head", want: []byte("a\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n"), requiresUnidiff0: true},
+		{name: "delete head", want: []byte("c\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n"), requiresUnidiff0: true},
+		{name: "add tail", want: []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\nz\n")},
+		{name: "modify tail", want: []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\nz\n")},
+		{name: "delete tail", want: []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\n")},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			patch := buildPatchWithContext(t, "victim", original, test.want, 0)
+			baseline, err := applyFileWithOptions(original, patch, applyOptions{})
+			if test.requiresUnidiff0 {
+				require.Error(t, err)
+			} else {
 				require.NoError(t, err)
-				assert.Equal(t, test.want, applied)
+				assert.Equal(t, test.want, baseline.Content)
+			}
+
+			applied, err := applyFileWithOptions(original, patch, applyOptions{
+				UnidiffZero: true,
 			})
-		}
+			require.NoError(t, err)
+			assert.Equal(t, test.want, applied.Content)
+		})
 	}
 }
 
@@ -322,9 +361,14 @@ func TestApplyFile_EmptyContextPatches(t *testing.T) {
 			t.Parallel()
 
 			patch := buildPatchWithContext(t, "file", test.original, test.target, 0)
-			applied, err := ApplyFile(test.original, patch)
+			_, err := applyFileWithOptions(test.original, patch, applyOptions{})
+			require.Error(t, err)
+
+			applied, err := applyFileWithOptions(test.original, patch, applyOptions{
+				UnidiffZero: true,
+			})
 			require.NoError(t, err)
-			assert.Equal(t, test.target, applied)
+			assert.Equal(t, test.target, applied.Content)
 		})
 	}
 }
@@ -371,23 +415,29 @@ func TestApplyFile_EmptyContextNoTrailingNewlinePatches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			applied, err := ApplyFile(test.original, test.patch)
+			applied, err := applyFileWithOptions(test.original, test.patch, applyOptions{})
 			require.NoError(t, err)
-			assert.Equal(t, test.target, applied)
+			assert.Equal(t, test.target, applied.Content)
 		})
 	}
 }
 
-func TestApplyFile_RelocatesHunkWhenContextStillMatches(t *testing.T) {
+func TestApplyFileWithOptions_ReducesContextToRelocateHunk(t *testing.T) {
 	t.Parallel()
 
 	originalPristine := []byte("package testsdk\n\ntype Status struct{}\n")
 	patchData := buildPatch(t, "status.go", originalPristine, []byte("package testsdk\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"))
 	shiftedPristine := []byte("package testsdk\n\n// generated comment moved the hunk down\n\ntype Status struct{}\n")
 
-	applied, err := ApplyFile(shiftedPristine, patchData)
+	_, err := applyFileWithOptions(shiftedPristine, patchData, applyOptions{})
+	require.Error(t, err)
+
+	applied, err := applyFileWithOptions(shiftedPristine, patchData, applyOptions{
+		MinContext:    1,
+		MinContextSet: true,
+	})
 	require.NoError(t, err)
-	assert.Equal(t, []byte("package testsdk\n\n// generated comment moved the hunk down\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"), applied)
+	assert.Equal(t, []byte("package testsdk\n\n// generated comment moved the hunk down\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"), applied.Content)
 }
 
 func TestApplyFile_RelocatesToNearestMatchingBlock(t *testing.T) {
@@ -567,15 +617,14 @@ func TestApplyFileWithOptions_UnidiffZeroIsAccepted(t *testing.T) {
 -beta
 `)
 
-	baseline, err := applyFileWithOptions(current, patchData, applyOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, []byte("alpha\ngamma\n"), baseline.Content)
+	_, err := applyFileWithOptions(current, patchData, applyOptions{})
+	require.Error(t, err)
 
 	applied, err := applyFileWithOptions(current, patchData, applyOptions{
 		UnidiffZero: true,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, baseline.Content, applied.Content)
+	assert.Equal(t, []byte("alpha\ngamma\n"), applied.Content)
 }
 
 func TestApplyFileWithOptions_RecountRebuildsHunkCounts(t *testing.T) {

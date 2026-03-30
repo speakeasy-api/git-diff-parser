@@ -48,7 +48,64 @@ func TestFindPosForFragmentMatchesExactBlock(t *testing.T) {
 		{text: "alpha", hasNewline: true},
 		{text: "bravo", hasNewline: true},
 		{text: "charlie", hasNewline: true},
-	})
+	}, false, false)
+	require.True(t, matched)
+	assert.Equal(t, 1, match)
+}
+
+func TestFindPosWithMinContextReducesLeadingContext(t *testing.T) {
+	session := &applySession{
+		applier:     &patchApply{options: applyOptions{MinContext: 1, MinContextSet: true}},
+		sourceLines: splitFileLines([]byte("a0\nA1\na2\na3\na4\na5\na6\n")),
+		patched:     make([]bool, 7),
+	}
+	hunk := patchHunk{
+		oldStart: 2,
+		oldCount: 5,
+		newStart: 2,
+		newCount: 5,
+		lines: []patchLine{
+			{kind: ' ', text: "a1", hasNewline: true},
+			{kind: ' ', text: "a2", hasNewline: true},
+			{kind: '-', text: "a3", hasNewline: true},
+			{kind: '+', text: "A3", hasNewline: true},
+			{kind: ' ', text: "a4", hasNewline: true},
+			{kind: ' ', text: "a5", hasNewline: true},
+		},
+	}
+
+	match, matched := session.findPos(hunk)
+	require.True(t, matched)
+	assert.Equal(t, 2, match.sourceStart)
+	assert.Equal(t, 5, match.sourceEnd)
+	assert.Equal(t, 1, match.hunkStart)
+	assert.Equal(t, 5, match.hunkEnd)
+}
+
+func TestFindPosForFragmentRejectsPatchedRangesWithoutOverlap(t *testing.T) {
+	session := &applySession{
+		sourceLines: splitFileLines([]byte("zero\nalpha\nbravo\ncharlie\n")),
+		patched:     []bool{false, true, true, false},
+	}
+
+	_, matched := session.findPosForFragment(1, []fileLine{
+		{text: "alpha", hasNewline: true},
+		{text: "bravo", hasNewline: true},
+	}, false, false)
+	assert.False(t, matched)
+}
+
+func TestFindPosForFragmentAllowsPatchedRangesWithOverlap(t *testing.T) {
+	session := &applySession{
+		applier:     &patchApply{options: applyOptions{AllowOverlap: true}},
+		sourceLines: splitFileLines([]byte("zero\nalpha\nbravo\ncharlie\n")),
+		patched:     []bool{false, true, true, false},
+	}
+
+	match, matched := session.findPosForFragment(1, []fileLine{
+		{text: "alpha", hasNewline: true},
+		{text: "bravo", hasNewline: true},
+	}, false, false)
 	require.True(t, matched)
 	assert.Equal(t, 1, match)
 }
