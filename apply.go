@@ -103,8 +103,12 @@ func fileDiffHasChanges(fileDiff fileDiff) bool {
 }
 
 func desiredLines(hunk patchHunk) []fileLine {
+	return desiredLinesWindow(hunk, 0, len(hunk.lines))
+}
+
+func desiredLinesWindow(hunk patchHunk, start, end int) []fileLine {
 	lines := make([]fileLine, 0, len(hunk.lines))
-	for _, line := range hunk.lines {
+	for _, line := range hunk.lines[start:end] {
 		if line.kind == ' ' || line.kind == '+' {
 			lines = append(lines, fileLine{text: line.text, hasNewline: line.hasNewline, eofMarker: line.newEOF})
 		}
@@ -113,8 +117,12 @@ func desiredLines(hunk patchHunk) []fileLine {
 }
 
 func preimageLines(hunk patchHunk) []fileLine {
+	return preimageLinesWindow(hunk, 0, len(hunk.lines))
+}
+
+func preimageLinesWindow(hunk patchHunk, start, end int) []fileLine {
 	lines := make([]fileLine, 0, len(hunk.lines))
-	for _, line := range hunk.lines {
+	for _, line := range hunk.lines[start:end] {
 		if line.kind == ' ' || line.kind == '-' {
 			lines = append(lines, fileLine{text: line.text, hasNewline: line.hasNewline, eofMarker: line.oldEOF})
 		}

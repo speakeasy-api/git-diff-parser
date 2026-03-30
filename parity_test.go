@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -133,8 +134,13 @@ func runLibraryApply(t *testing.T, tc parityCase, rejectMode bool) (applyResult,
 	options := defaultApplyOptions()
 	options.IgnoreWhitespace = tc.fixture.IgnoreWhitespace
 	options.Reverse = fixtureHasGitArg(tc.fixture, "--reverse")
+	options.UnidiffZero = fixtureHasGitArg(tc.fixture, "--unidiff-zero")
 	if rejectMode {
 		options.Mode = applyModeApply
+	}
+	if minContext, ok := fixtureContextArg(tc.fixture); ok {
+		options.MinContext = minContext
+		options.MinContextSet = true
 	}
 
 	return applyFileWithOptions(tc.src, tc.patch, options)
@@ -154,6 +160,19 @@ func fixtureHasGitArg(fixture parityFixture, arg string) bool {
 		}
 	}
 	return false
+}
+
+func fixtureContextArg(fixture parityFixture) (int, bool) {
+	for _, candidate := range fixture.GitArgs {
+		if !strings.HasPrefix(candidate, "-C") || len(candidate) <= 2 {
+			continue
+		}
+		value, err := strconv.Atoi(strings.TrimPrefix(candidate, "-C"))
+		if err == nil {
+			return value, true
+		}
+	}
+	return 0, false
 }
 
 type gitApplyOracle struct {
@@ -205,8 +224,7 @@ func runGitApplyOracles(t *testing.T, tc parityCase, extraArgs ...string) gitApp
 	oracles.tree = collectParityTree(t, dir)
 
 	if len(output) > 0 && err == nil {
-		// git apply is quiet here; keep the command output surfaced only if it was unexpected.
-		assert.Empty(t, string(output))
+		// git apply may emit successful warnings like context reduction; tree state is the oracle here.
 	}
 
 	return oracles

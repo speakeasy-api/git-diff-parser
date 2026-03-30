@@ -10,6 +10,7 @@ type validatedPatch struct {
 type applySession struct {
 	applier     *patchApply
 	sourceLines []fileLine
+	patched     []bool
 	image       []fileLine
 	cursor      int
 	conflicts   []applyConflict
@@ -18,6 +19,7 @@ type applySession struct {
 
 type matchedHunk struct {
 	sourceStart int
+	sourceEnd   int
 	hunkStart   int
 	hunkEnd     int
 }
@@ -57,6 +59,7 @@ func (p *patchApply) newApplySession(pristine []byte) *applySession {
 	return &applySession{
 		applier:     p,
 		sourceLines: sourceLines,
+		patched:     make([]bool, len(sourceLines)),
 		image:       make([]fileLine, 0, len(sourceLines)),
 	}
 }
@@ -94,6 +97,12 @@ func (s *applySession) applyHunk(hunk patchHunk, match matchedHunk) {
 			s.cursor++
 		case '+':
 			s.image = append(s.image, fileLine{text: hunkLine.text, hasNewline: hunkLine.hasNewline, eofMarker: hunkLine.newEOF})
+		}
+	}
+
+	if !s.allowOverlap() {
+		for i := match.sourceStart; i < match.sourceEnd && i < len(s.patched); i++ {
+			s.patched[i] = true
 		}
 	}
 }
@@ -148,36 +157,112 @@ func (s *applySession) findPos(hunk patchHunk) (matchedHunk, bool) {
 		return matchedHunk{}, false
 	}
 
-	preimage := preimageLines(hunk)
-	if pos, ok := s.findPosForFragment(preferred, preimage); ok {
-		return matchedHunk{
-			sourceStart: pos,
-			hunkStart:   0,
-			hunkEnd:     len(hunk.lines),
-		}, true
+	matchBeginning := hunk.oldStart == 0 || (hunk.oldStart == 1 && !s.unidiffZero())
+	leading, trailing := hunkContext(hunk.lines)
+	matchEnd := !s.unidiffZero() && trailing == 0
+
+	hunkStart := 0
+	hunkEnd := len(hunk.lines)
+
+	for {
+		preimage := preimageLinesWindow(hunk, hunkStart, hunkEnd)
+		if pos, ok := s.findPosForFragment(preferred, preimage, matchBeginning, matchEnd); ok {
+			return matchedHunk{
+				sourceStart: pos,
+				sourceEnd:   pos + len(preimage),
+				hunkStart:   hunkStart,
+				hunkEnd:     hunkEnd,
+			}, true
+		}
+
+		if leading <= s.minContext() && trailing <= s.minContext() {
+			break
+		}
+		if matchBeginning || matchEnd {
+			matchBeginning = false
+			matchEnd = false
+			continue
+		}
+			if leading >= trailing && hunkStart < hunkEnd {
+				hunkStart++
+				preferred--
+				if preferred < s.cursor {
+					preferred = s.cursor
+				}
+				leading--
+			}
+			if trailing > leading && hunkStart < hunkEnd {
+				hunkEnd--
+				trailing--
+		}
 	}
 
 	return matchedHunk{}, false
 }
 
-func (s *applySession) findPosForFragment(preferred int, fragment []fileLine) (int, bool) {
+func (s *applySession) findPosForFragment(preferred int, fragment []fileLine, matchBeginning, matchEnd bool) (int, bool) {
+	maxStart := s.sourceContentLines() - len(fragment)
+	if maxStart < 0 {
+		maxStart = s.sourceContentLines()
+	}
+	if matchBeginning {
+		preferred = 0
+	} else if matchEnd {
+		preferred = maxStart
+	}
+	if preferred > maxStart {
+		preferred = maxStart
+	}
+	if preferred < s.cursor {
+		preferred = s.cursor
+	}
+
 	for offset := 0; ; offset++ {
 		left := preferred - offset
-		if left >= s.cursor && matchFragment(s.sourceLines, left, fragment, s.ignoreWhitespace()) {
+		if left >= s.cursor && s.matchFragmentAt(left, fragment, matchBeginning, matchEnd) {
 			return left, true
 		}
 
 		right := preferred + offset
-		if offset > 0 && right >= s.cursor && matchFragment(s.sourceLines, right, fragment, s.ignoreWhitespace()) {
+		if offset > 0 && right >= s.cursor && s.matchFragmentAt(right, fragment, matchBeginning, matchEnd) {
 			return right, true
 		}
 
-		if left < s.cursor && right > len(s.sourceLines) {
+		if left < s.cursor && right > maxStart {
 			break
 		}
 	}
 
 	return 0, false
+}
+
+func (s *applySession) matchFragmentAt(start int, fragment []fileLine, matchBeginning, matchEnd bool) bool {
+	if matchBeginning && start != 0 {
+		return false
+	}
+	if start < 0 {
+		return false
+	}
+	if len(fragment) == 0 {
+		if matchEnd {
+			return start == s.sourceContentLines()
+		}
+		return start <= s.sourceContentLines()
+	}
+	if start+len(fragment) > len(s.sourceLines) {
+		return false
+	}
+	if matchEnd && start+len(fragment) != s.sourceContentLines() {
+		return false
+	}
+	if !s.allowOverlap() {
+		for i := start; i < start+len(fragment); i++ {
+			if i < len(s.patched) && s.patched[i] {
+				return false
+			}
+		}
+	}
+	return matchFragment(s.sourceLines, start, fragment, s.ignoreWhitespace())
 }
 
 func patchHunkFromHunk(hunk hunk) patchHunk {
@@ -225,4 +310,59 @@ func formatPatchHunkRange(start, count int) string {
 
 func (s *applySession) ignoreWhitespace() bool {
 	return s.applier != nil && s.applier.options.IgnoreWhitespace
+}
+
+func (s *applySession) allowOverlap() bool {
+	return s.applier != nil && s.applier.options.AllowOverlap
+}
+
+func (s *applySession) minContext() int {
+	if s.applier == nil {
+		return 0
+	}
+	return s.applier.options.MinContext
+}
+
+func (s *applySession) unidiffZero() bool {
+	return s.applier != nil && s.applier.options.UnidiffZero
+}
+
+func (s *applySession) sourceContentLines() int {
+	if n := len(s.sourceLines); n > 0 && s.sourceLines[n-1].eofMarker {
+		return n - 1
+	}
+	return len(s.sourceLines)
+}
+
+func hunkContext(lines []patchLine) (int, int) {
+	firstChange := len(lines)
+	lastChange := -1
+	for i, line := range lines {
+		if line.kind == '+' || line.kind == '-' {
+			if firstChange == len(lines) {
+				firstChange = i
+			}
+			lastChange = i
+		}
+	}
+
+	if lastChange < 0 {
+		return len(lines), len(lines)
+	}
+
+	leading := 0
+	for i := 0; i < firstChange; i++ {
+		if lines[i].kind == ' ' {
+			leading++
+		}
+	}
+
+	trailing := 0
+	for i := len(lines) - 1; i > lastChange; i-- {
+		if lines[i].kind == ' ' {
+			trailing++
+		}
+	}
+
+	return leading, trailing
 }
