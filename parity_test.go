@@ -133,13 +133,9 @@ func runLibraryApply(t *testing.T, tc parityCase, rejectMode bool) (applyResult,
 
 	options := defaultMergeApplyOptions()
 	options.IgnoreWhitespace = tc.fixture.IgnoreWhitespace
-	options.Reverse = fixtureHasGitArg(tc.fixture, "--reverse")
-	options.UnidiffZero = fixtureHasGitArg(tc.fixture, "--unidiff-zero")
 	if rejectMode {
 		options = defaultApplyOptions()
 		options.IgnoreWhitespace = tc.fixture.IgnoreWhitespace
-		options.Reverse = fixtureHasGitArg(tc.fixture, "--reverse")
-		options.UnidiffZero = fixtureHasGitArg(tc.fixture, "--unidiff-zero")
 	}
 	if minContext, ok := fixtureContextArg(tc.fixture); ok {
 		options.MinContext = minContext
@@ -154,15 +150,6 @@ func trimGitRejectHeader(rej []byte) []byte {
 		return rej[idx+1:]
 	}
 	return rej
-}
-
-func fixtureHasGitArg(fixture parityFixture, arg string) bool {
-	for _, candidate := range fixture.GitArgs {
-		if candidate == arg {
-			return true
-		}
-	}
-	return false
 }
 
 func fixtureContextArg(fixture parityFixture) (int, bool) {

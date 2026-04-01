@@ -28,10 +28,6 @@ type applyOptions struct {
 	AllowOverlap     bool
 	MinContext       int
 	MinContextSet    bool
-	Reverse          bool
-	UnidiffZero      bool
-	Recount          bool
-	InaccurateEOF    bool
 }
 
 func defaultApplyOptions() applyOptions {
