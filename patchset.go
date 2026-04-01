@@ -133,6 +133,10 @@ func applyPatchset(tree map[string][]byte, patchData []byte) (map[string][]byte,
 	return patchset.apply(tree)
 }
 
+func ApplyPatchset(tree map[string][]byte, patchData []byte) (map[string][]byte, error) {
+	return applyPatchset(tree, patchData)
+}
+
 func cloneTree(tree map[string][]byte) map[string][]byte {
 	out := make(map[string][]byte, len(tree))
 	for path, content := range tree {

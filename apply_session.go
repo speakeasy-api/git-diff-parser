@@ -43,10 +43,6 @@ func (p *patchApply) validateAndParsePatch(patchData []byte) (validatedPatch, er
 	for i := range fileDiff.Hunks {
 		hunks = append(hunks, patchHunkFromHunk(&fileDiff.Hunks[i]))
 	}
-	hunks, err := normalizePatchHunks(hunks, p.options)
-	if err != nil {
-		return validatedPatch{}, err
-	}
 
 	return validatedPatch{
 		rejectHead: formatRejectHeader(&fileDiff),
@@ -157,9 +153,9 @@ func (s *applySession) findPos(hunk patchHunk) (matchedHunk, bool) {
 		return matchedHunk{}, false
 	}
 
-	matchBeginning := hunk.oldStart == 0 || (hunk.oldStart == 1 && !s.unidiffZero())
+	matchBeginning := hunk.oldStart == 0 || hunk.oldStart == 1
 	leading, trailing := hunkContext(hunk.lines)
-	matchEnd := !s.unidiffZero() && trailing == 0
+	matchEnd := trailing == 0
 
 	hunkStart := 0
 	hunkEnd := len(hunk.lines)
@@ -321,10 +317,6 @@ func (s *applySession) minContext() int {
 		return 0
 	}
 	return s.applier.options.MinContext
-}
-
-func (s *applySession) unidiffZero() bool {
-	return s.applier != nil && s.applier.options.UnidiffZero
 }
 
 func (s *applySession) sourceContentLines() int {

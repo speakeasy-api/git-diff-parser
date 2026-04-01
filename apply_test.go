@@ -236,7 +236,7 @@ func TestApplyFile_BoundaryCases(t *testing.T) {
 	}
 }
 
-func TestApplyFileWithOptions_ZeroContextBoundaryCasesRequireUnidiffZero(t *testing.T) {
+func TestApplyFile_ZeroContextBoundaryCases(t *testing.T) {
 	t.Parallel()
 
 	original := []byte("b\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\np\nq\nr\ns\nt\nu\nv\nw\nx\ny\n")
@@ -260,19 +260,14 @@ func TestApplyFileWithOptions_ZeroContextBoundaryCasesRequireUnidiffZero(t *test
 			t.Parallel()
 
 			patch := buildPatchWithContext(t, "victim", original, test.want, 0)
-			baseline, err := applyFileWithOptions(original, patch, applyOptions{})
+			applied, err := ApplyFile(original, patch)
 			if test.requiresUnidiff0 {
 				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, test.want, baseline.Content)
+				return
 			}
 
-			applied, err := applyFileWithOptions(original, patch, applyOptions{
-				UnidiffZero: true,
-			})
 			require.NoError(t, err)
-			assert.Equal(t, test.want, applied.Content)
+			assert.Equal(t, test.want, applied)
 		})
 	}
 }
@@ -365,14 +360,8 @@ func TestApplyFile_EmptyContextPatches(t *testing.T) {
 			t.Parallel()
 
 			patch := buildPatchWithContext(t, "file", test.original, test.target, 0)
-			_, err := applyFileWithOptions(test.original, patch, applyOptions{})
+			_, err := ApplyFile(test.original, patch)
 			require.Error(t, err)
-
-			applied, err := applyFileWithOptions(test.original, patch, applyOptions{
-				UnidiffZero: true,
-			})
-			require.NoError(t, err)
-			assert.Equal(t, test.target, applied.Content)
 		})
 	}
 }
@@ -602,71 +591,6 @@ func TestApplyFileWithOptions_IgnoreWhitespaceAppliesThroughContextDrift(t *test
 	assert.Equal(t, target, applied.Content)
 	assert.Equal(t, 0, applied.DirectMisses)
 	assert.Equal(t, 0, applied.MergeConflicts)
-}
-
-func TestApplyFileWithOptions_ReverseAppliesPatchBackwards(t *testing.T) {
-	t.Parallel()
-
-	current := []byte("z\nb\n")
-	patchData := []byte(`diff --git a/file.txt b/file.txt
---- a/file.txt
-+++ b/file.txt
-@@ -1,2 +1,2 @@
--a
-+z
- b
-`)
-
-	applied, err := applyFileWithOptions(current, patchData, applyOptions{
-		Reverse: true,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []byte("a\nb\n"), applied.Content)
-}
-
-func TestApplyFileWithOptions_UnidiffZeroIsAccepted(t *testing.T) {
-	t.Parallel()
-
-	current := []byte("alpha\nbeta\ngamma\n")
-	patchData := []byte(`diff --git a/file.txt b/file.txt
---- a/file.txt
-+++ b/file.txt
-@@ -2 +1,0 @@
--beta
-`)
-
-	_, err := applyFileWithOptions(current, patchData, applyOptions{})
-	require.Error(t, err)
-
-	applied, err := applyFileWithOptions(current, patchData, applyOptions{
-		UnidiffZero: true,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []byte("alpha\ngamma\n"), applied.Content)
-}
-
-func TestApplyFileWithOptions_RecountRebuildsHunkCounts(t *testing.T) {
-	t.Parallel()
-
-	current := []byte("alpha\nbeta\ngamma\n")
-	patchData := []byte(`diff --git a/file.txt b/file.txt
---- a/file.txt
-+++ b/file.txt
-@@ -2,2 +2,2 @@
--beta
-`)
-
-	_, err := applyFileWithOptions(current, patchData, applyOptions{
-		UnidiffZero: true,
-	})
-	require.Error(t, err)
-
-	applied, err := applyFileWithOptions(current, patchData, applyOptions{
-		UnidiffZero: true,
-		Recount:     true,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []byte("alpha\ngamma\n"), applied.Content)
 }
 
 func TestApplyFile_RejectsAlreadyAppliedBeginningAndEndingPatches(t *testing.T) {
