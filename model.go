@@ -34,6 +34,24 @@ type hunkLine struct {
 	NewEOF     bool   `json:"new_eof,omitempty"`
 }
 
+// hunk is a line that starts with @@.
+// Each hunk shows one area where the files differ.
+// Unified format hunks look like this:
+// @@ from-file-line-numbers to-file-line-numbers @@
+//
+//	line-from-either-file
+//	line-from-either-file…
+//
+// If a hunk contains just one line, only its start line number appears. Otherwise its line numbers look like 'start,count'. An empty hunk is considered to start at the line that follows the hunk.
+type hunk struct {
+	ChangeList         changeList `json:"change_list"`
+	Lines              []hunkLine `json:"lines,omitempty"`
+	StartLineNumberOld int        `json:"start_line_number_old"`
+	CountOld           int        `json:"count_old"`
+	StartLineNumberNew int        `json:"start_line_number_new"`
+	CountNew           int        `json:"count_new"`
+}
+
 func (l *hunkLine) markNoNewline() {
 	l.HasNewline = false
 }
@@ -59,24 +77,6 @@ func (h *hunk) markEOFMarkers() {
 	}
 }
 
-// hunk is a line that starts with @@.
-// Each hunk shows one area where the files differ.
-// Unified format hunks look like this:
-// @@ from-file-line-numbers to-file-line-numbers @@
-//
-//	line-from-either-file
-//	line-from-either-file…
-//
-// If a hunk contains just one line, only its start line number appears. Otherwise its line numbers look like ‘start,count’. An empty hunk is considered to start at the line that follows the hunk.
-type hunk struct {
-	ChangeList         changeList `json:"change_list"`
-	Lines              []hunkLine `json:"lines,omitempty"`
-	StartLineNumberOld int        `json:"start_line_number_old"`
-	CountOld           int        `json:"count_old"`
-	StartLineNumberNew int        `json:"start_line_number_new"`
-	CountNew           int        `json:"count_new"`
-}
-
 func (changes *changeList) isSignificant() bool {
 	for _, change := range *changes {
 		if change.Type != contentChangeTypeNOOP {
@@ -86,7 +86,7 @@ func (changes *changeList) isSignificant() bool {
 	return false
 }
 
-func (h hunk) GoString() string {
+func (h *hunk) GoString() string {
 	return fmt.Sprintf(
 		"git_diff_parser.Hunk{ChangeList:%#v, StartLineNumberOld:%d, CountOld:%d, StartLineNumberNew:%d, CountNew:%d}",
 		h.ChangeList,
@@ -140,15 +140,25 @@ type fileDiff struct {
 	BinaryPatch        []binaryPatch `json:"binary_patch"`
 }
 
-func (fd fileDiff) GoString() string {
+func (fd *fileDiff) GoString() string {
+	var hunksStr string
+	if fd.Hunks == nil {
+		hunksStr = "[]git_diff_parser.Hunk(nil)"
+	} else {
+		hunks := make([]string, len(fd.Hunks))
+		for i := range fd.Hunks {
+			hunks[i] = fd.Hunks[i].GoString()
+		}
+		hunksStr = "[]git_diff_parser.Hunk{" + strings.Join(hunks, ", ") + "}"
+	}
 	return fmt.Sprintf(
-		"&git_diff_parser.FileDiff{FromFile:%#v, ToFile:%#v, Type:%#v, IsBinary:%t, NewMode:%#v, Hunks:%#v, BinaryPatch:%#v}",
+		"&git_diff_parser.FileDiff{FromFile:%#v, ToFile:%#v, Type:%#v, IsBinary:%t, NewMode:%#v, Hunks:%s, BinaryPatch:%#v}",
 		fd.FromFile,
 		fd.ToFile,
 		fd.Type,
 		fd.IsBinary,
 		fd.NewMode,
-		fd.Hunks,
+		hunksStr,
 		fd.BinaryPatch,
 	)
 }

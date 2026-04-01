@@ -34,6 +34,11 @@ func ApplyFile(pristine, patchData []byte) ([]byte, error) {
 	return result.Content, err
 }
 
+func ApplyFileWithConflicts(pristine, patchData []byte) ([]byte, error) {
+	result, err := applyFileWithOptions(pristine, patchData, defaultMergeApplyOptions())
+	return result.Content, err
+}
+
 func applyFileWithOptions(pristine, patchData []byte, options applyOptions) (applyResult, error) {
 	return newPatchApply(options).applyFileWithResult(pristine, patchData)
 }
@@ -72,7 +77,7 @@ func (p *patchApply) applyValidatedPatch(pristine []byte, patch validatedPatch) 
 	return result, &applyError{DirectMisses: len(outcome.conflicts)}
 }
 
-func validateApplyFileDiff(fileDiff fileDiff) error {
+func validateApplyFileDiff(fileDiff *fileDiff) error {
 	switch {
 	case fileDiff.IsBinary:
 		return errors.New("binary patches are not supported")
@@ -91,7 +96,7 @@ func validateApplyFileDiff(fileDiff fileDiff) error {
 	}
 }
 
-func fileDiffHasChanges(fileDiff fileDiff) bool {
+func fileDiffHasChanges(fileDiff *fileDiff) bool {
 	for _, hunk := range fileDiff.Hunks {
 		for _, change := range hunk.ChangeList {
 			if change.Type != contentChangeTypeNOOP {
@@ -114,10 +119,6 @@ func desiredLinesWindow(hunk patchHunk, start, end int) []fileLine {
 		}
 	}
 	return lines
-}
-
-func preimageLines(hunk patchHunk) []fileLine {
-	return preimageLinesWindow(hunk, 0, len(hunk.lines))
 }
 
 func preimageLinesWindow(hunk patchHunk, start, end int) []fileLine {

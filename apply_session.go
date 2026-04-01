@@ -35,13 +35,13 @@ func (p *patchApply) validateAndParsePatch(patchData []byte) (validatedPatch, er
 	}
 
 	fileDiff := parsed.FileDiff[0]
-	if err := validateApplyFileDiff(fileDiff); err != nil {
+	if err := validateApplyFileDiff(&fileDiff); err != nil {
 		return validatedPatch{}, err
 	}
 
 	hunks := make([]patchHunk, 0, len(fileDiff.Hunks))
-	for _, hunk := range fileDiff.Hunks {
-		hunks = append(hunks, patchHunkFromHunk(hunk))
+	for i := range fileDiff.Hunks {
+		hunks = append(hunks, patchHunkFromHunk(&fileDiff.Hunks[i]))
 	}
 	hunks, err := normalizePatchHunks(hunks, p.options)
 	if err != nil {
@@ -49,7 +49,7 @@ func (p *patchApply) validateAndParsePatch(patchData []byte) (validatedPatch, er
 	}
 
 	return validatedPatch{
-		rejectHead: formatRejectHeader(fileDiff),
+		rejectHead: formatRejectHeader(&fileDiff),
 		hunks:      hunks,
 	}, nil
 }
@@ -183,17 +183,17 @@ func (s *applySession) findPos(hunk patchHunk) (matchedHunk, bool) {
 			matchEnd = false
 			continue
 		}
-			if leading >= trailing && hunkStart < hunkEnd {
-				hunkStart++
-				preferred--
-				if preferred < s.cursor {
-					preferred = s.cursor
-				}
-				leading--
+		if leading >= trailing && hunkStart < hunkEnd {
+			hunkStart++
+			preferred--
+			if preferred < s.cursor {
+				preferred = s.cursor
 			}
-			if trailing > leading && hunkStart < hunkEnd {
-				hunkEnd--
-				trailing--
+			leading--
+		}
+		if trailing > leading && hunkStart < hunkEnd {
+			hunkEnd--
+			trailing--
 		}
 	}
 
@@ -201,9 +201,9 @@ func (s *applySession) findPos(hunk patchHunk) (matchedHunk, bool) {
 }
 
 func (s *applySession) findPosForFragment(preferred int, fragment []fileLine, matchBeginning, matchEnd bool) (int, bool) {
-	maxStart := s.sourceContentLines() - len(fragment)
+	maxStart := s.fragmentEndLimit(fragment) - len(fragment)
 	if maxStart < 0 {
-		maxStart = s.sourceContentLines()
+		maxStart = s.fragmentEndLimit(fragment)
 	}
 	if matchBeginning {
 		preferred = 0
@@ -252,7 +252,7 @@ func (s *applySession) matchFragmentAt(start int, fragment []fileLine, matchBegi
 	if start+len(fragment) > len(s.sourceLines) {
 		return false
 	}
-	if matchEnd && start+len(fragment) != s.sourceContentLines() {
+	if matchEnd && start+len(fragment) != s.fragmentEndLimit(fragment) {
 		return false
 	}
 	if !s.allowOverlap() {
@@ -265,7 +265,7 @@ func (s *applySession) matchFragmentAt(start int, fragment []fileLine, matchBegi
 	return matchFragment(s.sourceLines, start, fragment, s.ignoreWhitespace())
 }
 
-func patchHunkFromHunk(hunk hunk) patchHunk {
+func patchHunkFromHunk(hunk *hunk) patchHunk {
 	lines := make([]patchLine, 0, len(hunk.Lines))
 	for _, line := range hunk.Lines {
 		lines = append(lines, patchLine{
@@ -287,7 +287,7 @@ func patchHunkFromHunk(hunk hunk) patchHunk {
 	}
 }
 
-func formatRejectHeader(fileDiff fileDiff) string {
+func formatRejectHeader(fileDiff *fileDiff) string {
 	path := firstNonEmpty(fileDiff.ToFile, fileDiff.FromFile)
 	if path == "" {
 		return ""
@@ -295,7 +295,7 @@ func formatRejectHeader(fileDiff fileDiff) string {
 	return "diff a/" + path + " b/" + path + "\t(rejected hunks)"
 }
 
-func formatPatchHunkHeader(hunk hunk) string {
+func formatPatchHunkHeader(hunk *hunk) string {
 	oldRange := formatPatchHunkRange(hunk.StartLineNumberOld, hunk.CountOld)
 	newRange := formatPatchHunkRange(hunk.StartLineNumberNew, hunk.CountNew)
 	return fmt.Sprintf("@@ -%s +%s @@", oldRange, newRange)
@@ -334,7 +334,14 @@ func (s *applySession) sourceContentLines() int {
 	return len(s.sourceLines)
 }
 
-func hunkContext(lines []patchLine) (int, int) {
+func (s *applySession) fragmentEndLimit(fragment []fileLine) int {
+	if len(fragment) > 0 && fragment[len(fragment)-1].eofMarker {
+		return len(s.sourceLines)
+	}
+	return s.sourceContentLines()
+}
+
+func hunkContext(lines []patchLine) (leading, trailing int) {
 	firstChange := len(lines)
 	lastChange := -1
 	for i, line := range lines {
@@ -350,14 +357,14 @@ func hunkContext(lines []patchLine) (int, int) {
 		return len(lines), len(lines)
 	}
 
-	leading := 0
+	leading = 0
 	for i := 0; i < firstChange; i++ {
 		if lines[i].kind == ' ' {
 			leading++
 		}
 	}
 
-	trailing := 0
+	trailing = 0
 	for i := len(lines) - 1; i > lastChange; i-- {
 		if lines[i].kind == ' ' {
 			trailing++
