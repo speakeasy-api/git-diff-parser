@@ -4,7 +4,7 @@ import "fmt"
 
 const patchsetOperationModify patchsetOperation = "modify"
 
-func applyPatchsetFile(tree map[string][]byte, file patchsetFile) error {
+func applyPatchsetFile(tree map[string][]byte, file *patchsetFile) error {
 	if file.Diff.IsBinary {
 		return &unsupportedPatchError{
 			Operation: patchsetOperationBinary,
@@ -12,7 +12,7 @@ func applyPatchsetFile(tree map[string][]byte, file patchsetFile) error {
 		}
 	}
 
-	op, sourcePath, targetPath, err := determinePatchsetOperation(tree, file.Diff)
+	op, sourcePath, targetPath, err := determinePatchsetOperation(tree, &file.Diff)
 	if err != nil {
 		return err
 	}
@@ -87,8 +87,8 @@ func applyPatchsetFile(tree map[string][]byte, file patchsetFile) error {
 	}
 }
 
-func determinePatchsetOperation(tree map[string][]byte, fileDiff fileDiff) (patchsetOperation, string, string, error) {
-	sourcePath, targetPath := patchsetPaths(fileDiff)
+func determinePatchsetOperation(tree map[string][]byte, fileDiff *fileDiff) (op patchsetOperation, sourcePath, targetPath string, err error) {
+	sourcePath, targetPath = patchsetPaths(fileDiff)
 
 	switch {
 	case fileDiff.RenameFrom != "" || fileDiff.RenameTo != "":
@@ -114,24 +114,24 @@ func determinePatchsetOperation(tree map[string][]byte, fileDiff fileDiff) (patc
 	return patchsetOperationModify, sourcePath, targetPath, nil
 }
 
-func patchsetPaths(fileDiff fileDiff) (string, string) {
-	sourcePath := firstNonEmpty(fileDiff.RenameFrom, fileDiff.CopyFrom, fileDiff.FromFile, fileDiff.ToFile)
-	targetPath := firstNonEmpty(fileDiff.RenameTo, fileDiff.CopyTo, fileDiff.ToFile, fileDiff.FromFile)
+func patchsetPaths(fileDiff *fileDiff) (sourcePath, targetPath string) {
+	sourcePath = firstNonEmpty(fileDiff.RenameFrom, fileDiff.CopyFrom, fileDiff.FromFile, fileDiff.ToFile)
+	targetPath = firstNonEmpty(fileDiff.RenameTo, fileDiff.CopyTo, fileDiff.ToFile, fileDiff.FromFile)
 	return sourcePath, targetPath
 }
 
-func applyPatchsetContent(pristine []byte, file patchsetFile) ([]byte, error) {
+func applyPatchsetContent(pristine []byte, file *patchsetFile) ([]byte, error) {
 	if len(file.Diff.Hunks) == 0 {
 		return append([]byte(nil), pristine...), nil
 	}
 
 	hunks := make([]patchHunk, 0, len(file.Diff.Hunks))
-	for _, hunk := range file.Diff.Hunks {
-		hunks = append(hunks, patchHunkFromHunk(hunk))
+	for i := range file.Diff.Hunks {
+		hunks = append(hunks, patchHunkFromHunk(&file.Diff.Hunks[i]))
 	}
 
 	result, err := newPatchApply(applyOptions{Mode: applyModeApply}).applyValidatedPatch(pristine, validatedPatch{
-		rejectHead: formatRejectHeader(file.Diff),
+		rejectHead: formatRejectHeader(&file.Diff),
 		hunks:      hunks,
 	})
 	if err != nil {

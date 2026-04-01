@@ -58,12 +58,12 @@ func renderRejectContent(header string, conflicts []applyConflict) []byte {
 		buf.WriteString(header)
 		buf.WriteByte('\n')
 	}
-	for _, conflict := range conflicts {
-		if conflict.hunk.header != "" {
-			buf.WriteString(conflict.hunk.header)
+	for i := range conflicts {
+		if conflicts[i].hunk.header != "" {
+			buf.WriteString(conflicts[i].hunk.header)
 			buf.WriteByte('\n')
 		}
-		for _, line := range conflict.hunk.lines {
+		for _, line := range conflicts[i].hunk.lines {
 			buf.WriteByte(line.kind)
 			buf.WriteString(line.text)
 			if line.hasNewline {

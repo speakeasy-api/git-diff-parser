@@ -57,7 +57,11 @@ func TestApplyFile_TextFixtures(t *testing.T) {
 			t.Parallel()
 
 			files := loadApplyFixture(t, test.fixture)
-			applied, err := ApplyFile(files.src, files.patch)
+			applyFn := ApplyFile
+			if test.conflict {
+				applyFn = ApplyFileWithConflicts
+			}
+			applied, err := applyFn(files.src, files.patch)
 
 			if test.wantErr != "" {
 				require.Error(t, err)
@@ -65,7 +69,7 @@ func TestApplyFile_TextFixtures(t *testing.T) {
 				if test.conflict {
 					var applyErr *applyError
 					require.ErrorAs(t, err, &applyErr)
-					assert.True(t, errors.Is(err, ErrPatchConflict))
+					require.ErrorIs(t, err, ErrPatchConflict)
 					assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 					assert.Contains(t, string(applied), defaultIncomingConflictMarker)
 				}
@@ -327,7 +331,7 @@ func TestApplyFile_DamagedContextPatchesConflictWithoutFuzz(t *testing.T) {
 			t.Parallel()
 
 			patch := rewriteFirstHunkHeader(damaged, test.header)
-			applied, err := ApplyFile(original, patch)
+			applied, err := ApplyFileWithConflicts(original, patch)
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrPatchConflict)
 			assert.Contains(t, string(applied), defaultCurrentConflictMarker)
@@ -425,9 +429,9 @@ func TestApplyFile_EmptyContextNoTrailingNewlinePatches(t *testing.T) {
 func TestApplyFileWithOptions_ReducesContextToRelocateHunk(t *testing.T) {
 	t.Parallel()
 
-	originalPristine := []byte("package testsdk\n\ntype Status struct{}\n")
-	patchData := buildPatch(t, "status.go", originalPristine, []byte("package testsdk\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"))
-	shiftedPristine := []byte("package testsdk\n\n// generated comment moved the hunk down\n\ntype Status struct{}\n")
+	patchData := mustReadFile(t, filepath.Join("testdata", "parity", "context-reduced-leading", "patch"))
+	shiftedPristine := mustReadFile(t, filepath.Join("testdata", "parity", "context-reduced-leading", "src"))
+	want := mustReadFile(t, filepath.Join("testdata", "parity", "context-reduced-leading", "out"))
 
 	_, err := applyFileWithOptions(shiftedPristine, patchData, applyOptions{})
 	require.Error(t, err)
@@ -437,7 +441,7 @@ func TestApplyFileWithOptions_ReducesContextToRelocateHunk(t *testing.T) {
 		MinContextSet: true,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, []byte("package testsdk\n\n// generated comment moved the hunk down\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"), applied.Content)
+	assert.Equal(t, want, applied.Content)
 }
 
 func TestApplyFile_RelocatesToNearestMatchingBlock(t *testing.T) {
@@ -473,7 +477,7 @@ func TestApplyFile_MultipleHunksOneConflict(t *testing.T) {
 	current := []byte("line 1\nline 2\nline 3\nline 4\nline 5\nline VI\nline 7\nline 8\n")
 
 	patch := buildPatchWithContext(t, "multi.txt", original, target, 1)
-	applied, err := ApplyFile(current, patch)
+	applied, err := ApplyFileWithConflicts(current, patch)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPatchConflict)
 	assert.Contains(t, string(applied), "line two")
@@ -482,7 +486,7 @@ func TestApplyFile_MultipleHunksOneConflict(t *testing.T) {
 	assert.Contains(t, string(applied), "line six")
 }
 
-func TestApplyFile_ReturnsConflictMarkers(t *testing.T) {
+func TestApplyFile_DefaultsToDirectApply(t *testing.T) {
 	t.Parallel()
 
 	base := []byte("package testsdk\n\ntype Status struct{}\n")
@@ -492,7 +496,21 @@ func TestApplyFile_ReturnsConflictMarkers(t *testing.T) {
 	applied, err := ApplyFile(current, patchData)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrPatchConflict)
-	assert.True(t, errors.Is(err, ErrPatchConflict))
+	assert.Equal(t, current, applied)
+	assert.NotContains(t, string(applied), defaultCurrentConflictMarker)
+	assert.NotContains(t, string(applied), defaultIncomingConflictMarker)
+}
+
+func TestApplyFileWithConflicts_ReturnsConflictMarkers(t *testing.T) {
+	t.Parallel()
+
+	base := []byte("package testsdk\n\ntype Status struct{}\n")
+	current := []byte("package testsdk\n\ntype Status struct {\n\tValue string\n}\n")
+	patchData := buildPatch(t, "status.go", base, []byte("package testsdk\n\ntype Status struct{}\n\nfunc (s *Status) String() string {\n\treturn \"custom\"\n}\n"))
+
+	applied, err := ApplyFileWithConflicts(current, patchData)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrPatchConflict)
 	assert.Contains(t, string(applied), defaultCurrentConflictMarker)
 	assert.Contains(t, string(applied), defaultIncomingConflictMarker)
 	assert.Contains(t, string(applied), "func (s *Status) String() string")
@@ -690,7 +708,7 @@ func TestApplyFile_RejectsAlreadyAppliedBeginningAndEndingPatches(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			applied, err := ApplyFile(test.current, test.patch)
+			applied, err := ApplyFileWithConflicts(test.current, test.patch)
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrPatchConflict)
 			assert.Contains(t, string(applied), defaultCurrentConflictMarker)
@@ -739,7 +757,7 @@ func TestApplyFile_RejectsAlreadyAppliedMiddlePatches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			applied, err := ApplyFile(test.current, test.patch)
+			applied, err := ApplyFileWithConflicts(test.current, test.patch)
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrPatchConflict)
 			assert.Contains(t, string(applied), defaultCurrentConflictMarker)
@@ -937,7 +955,7 @@ func TestApplyFile_ShrinkFailures(t *testing.T) {
 			t.Parallel()
 
 			patch := buildPatch(t, "F", test.original, test.target)
-			applied, err := ApplyFile(test.current, patch)
+			applied, err := ApplyFileWithConflicts(test.current, patch)
 			require.Error(t, err)
 			require.ErrorIs(t, err, ErrPatchConflict)
 			assert.Contains(t, string(applied), defaultCurrentConflictMarker)

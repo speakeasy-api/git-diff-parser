@@ -1,8 +1,92 @@
+version: "2"
+
 run:
-  go: "1.19"
-linters-settings:
-  tagliatelle:
-    case:
-      use-field-name: true
+  go: "1.21"
+  timeout: 5m
+
+formatters:
+  enable:
+    - gofumpt
+
+  settings:
+    gofumpt:
+      extra-rules: true
+
+linters:
+  enable:
+    # Bugs / correctness
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - bodyclose
+    - nilerr
+    - copyloopvar
+
+    # Style / simplicity
+    - revive
+    - misspell
+    - unconvert
+    - unused
+    - nolintlint
+    - gocritic
+    - dupword
+    - usestdlibvars
+
+    # Complexity
+    - gocyclo
+    - cyclop
+
+    # Testing
+    - testifylint
+
+    # Tags
+    - tagliatelle
+
+  settings:
+    gocyclo:
+      min-complexity: 30
+
+    cyclop:
+      max-complexity: 30
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+
+    revive:
       rules:
-        json: snake
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-naming
+        - name: error-return
+        - name: exported
+          disabled: true
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: unused-parameter
+
+    tagliatelle:
+      case:
+        use-field-name: true
+        rules:
+          json: snake
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    testifylint:
+      enable-all: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -36,13 +36,19 @@ type applyOptions struct {
 
 func defaultApplyOptions() applyOptions {
 	return applyOptions{
-		Mode:       applyModeMerge,
+		Mode:       applyModeApply,
 		MinContext: math.MaxInt,
-		ConflictLabels: conflictLabels{
-			Current:  "Current",
-			Incoming: "Incoming patch",
-		},
 	}
+}
+
+func defaultMergeApplyOptions() applyOptions {
+	options := defaultApplyOptions()
+	options.Mode = applyModeMerge
+	options.ConflictLabels = conflictLabels{
+		Current:  "Current",
+		Incoming: "Incoming patch",
+	}
+	return options
 }
 
 // patchApply holds apply-time configuration and mirrors Git's stateful apply design.
@@ -59,9 +65,9 @@ func (o applyOptions) normalize() applyOptions {
 		o.Mode = applyModeApply
 	}
 	if o.Mode == applyModeMerge {
-		defaults := defaultApplyOptions()
+		defaults := defaultMergeApplyOptions()
 		if !o.MinContextSet {
-			o.MinContext = defaults.MinContext
+			o.MinContext = defaultApplyOptions().MinContext
 		}
 		if o.ConflictLabels.Current == "" {
 			o.ConflictLabels.Current = defaults.ConflictLabels.Current

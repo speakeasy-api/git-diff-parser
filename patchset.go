@@ -117,8 +117,8 @@ func parsePatchset(patchData []byte) (patchset, []error) {
 
 func (p patchset) apply(tree map[string][]byte) (map[string][]byte, error) {
 	out := cloneTree(tree)
-	for _, file := range p.Files {
-		if err := applyPatchsetFile(out, file); err != nil {
+	for i := range p.Files {
+		if err := applyPatchsetFile(out, &p.Files[i]); err != nil {
 			return nil, err
 		}
 	}

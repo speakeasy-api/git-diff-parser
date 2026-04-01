@@ -5,27 +5,20 @@ on:
     branches:
       - main
   pull_request:
-env:
-  GOPRIVATE: "github.com/speakeasy-api"
+
+permissions:
+  contents: read
+
 jobs:
-  tests:
+  test:
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: true
-      matrix:
-        go-version: [1.21.x]
-
-    name: Tests - Go ${{ matrix.go-version }}
-
+    name: Tests
     steps:
-      - name: Checkout the code
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Install Go
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version-file: go.mod
 
-      - name: Run the tests
-        run: go test ./...
+      - name: Run tests
+        run: go test -race -count=1 ./...

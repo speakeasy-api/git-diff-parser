@@ -24,19 +24,19 @@ func TestParse(t *testing.T) {
 		want         bool
 	}
 	significantDiffs, err := testdata.ReadDir("testdata/significant")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	insignificantDiffs, err := testdata.ReadDir("testdata/insignificant")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	tests := []SignificanceTest{}
 	for _, testFile := range significantDiffs {
 		if !strings.HasSuffix(testFile.Name(), "diff") {
 			continue
 		}
 		content, err := testdata.ReadFile("testdata/significant/" + testFile.Name())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		tests = append(tests, SignificanceTest{
 			name:         testFile.Name(),
-			relativePath: filepath.Join("testdata/significant", testFile.Name()),
+			relativePath: filepath.Join("testdata", "significant", testFile.Name()),
 			input:        string(content),
 			want:         true,
 		})
@@ -46,10 +46,10 @@ func TestParse(t *testing.T) {
 			continue
 		}
 		content, err := testdata.ReadFile("testdata/insignificant/" + testFile.Name())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		tests = append(tests, SignificanceTest{
 			name:         testFile.Name(),
-			relativePath: filepath.Join("testdata/insignificant", testFile.Name()),
+			relativePath: filepath.Join("testdata", "insignificant", testFile.Name()),
 			input:        string(content),
 			want:         false,
 		})
@@ -148,7 +148,7 @@ new mode 100755
 	assert.False(t, hunk.Lines[2].NewEOF)
 }
 
-func MatchMessageSnapshot(t *testing.T, snapshotName string, content string) {
+func MatchMessageSnapshot(t *testing.T, snapshotName, content string) {
 	t.Helper()
 	_, filename, _, ok := runtime.Caller(0)
 	require.True(t, ok)
@@ -157,7 +157,7 @@ func MatchMessageSnapshot(t *testing.T, snapshotName string, content string) {
 	if _, err := os.Stat(snapshotFile); err != nil {
 		f, err := os.OpenFile(snapshotFile, os.O_APPEND|os.O_CREATE|os.O_RDWR, os.ModePerm)
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		_, err = f.WriteString(content)
 		require.NoError(t, err)
 		return

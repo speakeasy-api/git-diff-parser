@@ -1,28 +1,26 @@
-name: lint
+name: Lint
 
 on:
   push:
     branches:
       - main
   pull_request:
-env:
-  GOPRIVATE: "github.com/speakeasy-api"
+
+permissions:
+  contents: read
+
 jobs:
-  golangci:
-    name: lint
+  golangci-lint:
+    name: golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
         with:
-          go-version: 1.21
+          go-version-file: go.mod
 
-      - name: Configure git for private modules
-        env:
-          GIT_AUTH_TOKEN: ${{ secrets.BOT_REPO_TOKEN }}
-        run: git config --global url."https://speakeasybot:${GITHUB_TOKEN}@github.com".insteadOf "https://github.com"
-
-      - uses: actions/checkout@v3
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: v1.57.2
+          version: v2.1.6

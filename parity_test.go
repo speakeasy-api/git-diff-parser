@@ -131,12 +131,15 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 func runLibraryApply(t *testing.T, tc parityCase, rejectMode bool) (applyResult, error) {
 	t.Helper()
 
-	options := defaultApplyOptions()
+	options := defaultMergeApplyOptions()
 	options.IgnoreWhitespace = tc.fixture.IgnoreWhitespace
 	options.Reverse = fixtureHasGitArg(tc.fixture, "--reverse")
 	options.UnidiffZero = fixtureHasGitArg(tc.fixture, "--unidiff-zero")
 	if rejectMode {
-		options.Mode = applyModeApply
+		options = defaultApplyOptions()
+		options.IgnoreWhitespace = tc.fixture.IgnoreWhitespace
+		options.Reverse = fixtureHasGitArg(tc.fixture, "--reverse")
+		options.UnidiffZero = fixtureHasGitArg(tc.fixture, "--unidiff-zero")
 	}
 	if minContext, ok := fixtureContextArg(tc.fixture); ok {
 		options.MinContext = minContext

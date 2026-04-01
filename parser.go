@@ -195,7 +195,7 @@ func (p *parser) tryVisitHeader(diff string) bool {
 	}
 
 	fileHEAD := len(p.diff.FileDiff) - 1
-	if len(diff) == 0 && p.mode == modeHeader {
+	if diff == "" && p.mode == modeHeader {
 		return true
 	}
 	if fileHEAD < 0 {
@@ -441,19 +441,19 @@ func parse(diff string) (diff, []error) {
 
 // SignificantChange Allows a structured diff to be passed into the `isSignificant` function to determine significance. That function can return a message, which is optionally passed as the final argument
 // Returns the first significant change found, or false if non found.
-func significantChange(diff string, isSignificant func(*fileDiff, *contentChange) (bool, string)) (bool, string, error) {
-	parsed, err := parse(diff)
-	if len(err) > 0 {
-		return true, "", fmt.Errorf("failed to parse diff: %w", err[0])
+func significantChange(diff string, isSignificant func(*fileDiff, *contentChange) (bool, string)) (isSignificantResult bool, resultMsg string, resultErr error) {
+	parsed, errs := parse(diff)
+	if len(errs) > 0 {
+		return true, "", fmt.Errorf("failed to parse diff: %w", errs[0])
 	}
-	for _, fileDiff := range parsed.FileDiff {
-		if significant, msg := isSignificant(&fileDiff, &contentChange{}); significant {
+	for i := range parsed.FileDiff {
+		if sig, msg := isSignificant(&parsed.FileDiff[i], &contentChange{}); sig {
 			return true, msg, nil
 		}
 
-		for _, hunk := range fileDiff.Hunks {
+		for _, hunk := range parsed.FileDiff[i].Hunks {
 			for _, change := range hunk.ChangeList {
-				if significant, msg := isSignificant(&fileDiff, &change); significant {
+				if sig, msg := isSignificant(&parsed.FileDiff[i], &change); sig {
 					return true, msg, nil
 				}
 			}
