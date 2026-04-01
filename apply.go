@@ -177,27 +177,6 @@ func ensureTrailingNewline(lines []fileLine) []fileLine {
 	return lines
 }
 
-func markEOFMarkers(lines []patchLine, oldCount, newCount int) {
-	oldSeen := 0
-	newSeen := 0
-
-	for i := range lines {
-		line := lines[i]
-		if line.kind == ' ' || line.kind == '-' {
-			oldSeen++
-		}
-		if line.kind == ' ' || line.kind == '+' {
-			newSeen++
-		}
-		if !isEOFMarkerCandidate(line) {
-			continue
-		}
-
-		lines[i].oldEOF = (line.kind == ' ' || line.kind == '-') && oldSeen == oldCount
-		lines[i].newEOF = (line.kind == ' ' || line.kind == '+') && newSeen == newCount
-	}
-}
-
 func splitFileLines(content []byte) []fileLine {
 	rawLines := splitLinesPreserveNewline(string(content))
 	lines := make([]fileLine, 0, len(rawLines))
@@ -230,13 +209,6 @@ func joinFileLines(lines []fileLine) []byte {
 func trimSingleLineEnding(s string) string {
 	s = strings.TrimSuffix(s, "\n")
 	return s
-}
-
-func isEOFMarkerCandidate(line patchLine) bool {
-	if !line.hasNewline {
-		return false
-	}
-	return strings.TrimSuffix(line.text, "\r") == ""
 }
 
 func splitLinesPreserveNewline(s string) []string {
