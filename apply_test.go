@@ -1019,3 +1019,41 @@ func TestApplyFile_PreservesExactBytes(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, bytes.Equal(files.out, applied))
 }
+
+// blankTrailingContextFixture provides a hunk inserting lines between two
+// structural blocks where the trailing context line is blank. markEOFMarkers
+// previously flagged any blank context line at the hunk's count boundary as
+// an EOF marker, causing it to mismatch a real mid-file blank line in source.
+var blankTrailingContextFixture = struct {
+	original []byte
+	target   []byte
+}{
+	original: []byte("class Foo {\n    void a() {}\n\n    void b() {}\n\n    void c() {}\n}\n"),
+	target:   []byte("class Foo {\n    void a() {}\n\n    void b() {}\n\n    void inserted() {}\n\n    void c() {}\n}\n"),
+}
+
+// TestApplyFile_BlankTrailingContextMidFile is a regression test for the
+// fixture above against the direct apply path.
+func TestApplyFile_BlankTrailingContextMidFile(t *testing.T) {
+	t.Parallel()
+
+	f := blankTrailingContextFixture
+	patch := buildPatchWithContext(t, "Foo.java", f.original, f.target, 3)
+	applied, err := ApplyFile(f.original, patch)
+	require.NoError(t, err)
+	assert.Equal(t, f.target, applied)
+}
+
+// TestApplyFile_BlankTrailingContextWithConflicts mirrors the regression test
+// above against the merge mode used by ApplyFileWithConflicts. The bug
+// surfaced as a spurious conflict on a freshly generated file because the
+// hunk's trailing blank context was misidentified as an EOF marker.
+func TestApplyFile_BlankTrailingContextWithConflicts(t *testing.T) {
+	t.Parallel()
+
+	f := blankTrailingContextFixture
+	patch := buildPatchWithContext(t, "Foo.java", f.original, f.target, 3)
+	applied, err := ApplyFileWithConflicts(f.original, patch)
+	require.NoError(t, err)
+	assert.Equal(t, f.target, applied)
+}

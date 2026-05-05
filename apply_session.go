@@ -87,7 +87,16 @@ func (s *applySession) applyHunk(hunk patchHunk, match matchedHunk) {
 	for _, hunkLine := range hunk.lines[match.hunkStart:match.hunkEnd] {
 		switch hunkLine.kind {
 		case ' ':
-			s.image = append(s.image, fileLine{text: hunkLine.text, hasNewline: hunkLine.hasNewline, eofMarker: hunkLine.newEOF})
+			// Source eofMarker from the matched source line. The parser's
+			// hunkLine.newEOF flag is unreliable for blank trailing context
+			// because markEOFMarkers cannot distinguish a real mid-file
+			// blank context line from the synthetic source EOF marker
+			// (see related comment in lineMatches).
+			eof := hunkLine.newEOF
+			if s.cursor < len(s.sourceLines) {
+				eof = s.sourceLines[s.cursor].eofMarker
+			}
+			s.image = append(s.image, fileLine{text: hunkLine.text, hasNewline: hunkLine.hasNewline, eofMarker: eof})
 			s.cursor++
 		case '-':
 			s.cursor++

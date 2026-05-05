@@ -149,8 +149,23 @@ func matchFragment(source []fileLine, start int, fragment []fileLine, ignoreWhit
 }
 
 func lineMatches(left, right fileLine, ignoreWhitespace bool) bool {
-	if left.hasNewline != right.hasNewline || left.eofMarker != right.eofMarker {
+	if left.hasNewline != right.hasNewline {
 		return false
+	}
+
+	if left.eofMarker != right.eofMarker {
+		// eofMarker is unreliable on blank lines: a mid-file blank and the
+		// synthetic source-EOF sentinel both serialize as " \n" in unified
+		// diff, so the parser can't tell them apart. We accept the position
+		// match here; applyHunk then writes the correct eofMarker by copying
+		// it from the matched source line instead of the patch line.
+		isBlankWithNewLine := func(line fileLine) bool {
+			return line.text == "" && line.hasNewline
+		}
+
+		if !isBlankWithNewLine(left) || !isBlankWithNewLine(right) {
+			return false
+		}
 	}
 	if left.text == right.text {
 		return true
