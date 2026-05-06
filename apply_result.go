@@ -31,7 +31,13 @@ type applyConflict struct {
 
 // applyError reports the aggregate apply outcome.
 type applyError struct {
-	DirectMisses   int
+	// DirectMisses counts hunks whose preimage could not be located in the
+	// pristine file during a direct (non-merge) apply. The output content is
+	// left unchanged for those regions; no conflict markers are emitted.
+	DirectMisses int
+	// MergeConflicts counts hunks whose preimage could not be located during
+	// a merge-mode apply. The output content contains git-style conflict
+	// markers (<<<<<<<, =======, >>>>>>>) around each affected region.
 	MergeConflicts int
 	// ConflictingHunks keeps the legacy count available for callers that still
 	// reason about conflict hunks rather than the new miss/conflict split.
