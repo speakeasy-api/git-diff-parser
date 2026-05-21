@@ -1,0 +1,9 @@
+diff --git a/foo b/bar
+similarity index 47%
+rename from foo
+rename to bar
+--- a/foo
++++ b/bar
+@@ -1 +1 @@
+-This is foo
++This is bar

@@ -134,6 +134,232 @@ new mode 100755
 	}
 }
 
+func TestParsePatchOperations(t *testing.T) {
+	t.Parallel()
+
+	patchData := []byte(`diff --git a/a.go b/a.go
+deleted file mode 100644
+index 1111111..0000000
+--- a/a.go
++++ /dev/null
+@@ -1 +0,0 @@
+-content a
+diff --git a/c.go b/c.go
+new file mode 100755
+index 0000000..3333333
+--- /dev/null
++++ b/c.go
+@@ -0,0 +1 @@
++content c
+diff --git a/e.go b/f.go
+similarity index 100%
+rename from e.go
+rename to f.go
+diff --git a/mode.go b/mode.go
+old mode 100644
+new mode 100755
+--- a/mode.go
++++ b/mode.go
+`)
+
+	operations, err := ParsePatchOperations(patchData)
+	require.NoError(t, err)
+	require.Len(t, operations, 4)
+
+	assert.Equal(t, PatchOperationTypeDelete, operations[0].Type)
+	assert.Equal(t, "a.go", operations[0].SourcePath)
+	assert.Empty(t, operations[0].TargetPath)
+	assert.True(t, operations[0].MutatesFileSet())
+
+	assert.Equal(t, PatchOperationTypeCreate, operations[1].Type)
+	assert.Empty(t, operations[1].SourcePath)
+	assert.Equal(t, "c.go", operations[1].TargetPath)
+	assert.Equal(t, "100755", operations[1].NewMode)
+	assert.True(t, operations[1].MutatesFileSet())
+
+	assert.Equal(t, PatchOperationTypeRename, operations[2].Type)
+	assert.Equal(t, "e.go", operations[2].SourcePath)
+	assert.Equal(t, "f.go", operations[2].TargetPath)
+	assert.True(t, operations[2].MutatesFileSet())
+
+	assert.Equal(t, PatchOperationTypeModeChange, operations[3].Type)
+	assert.Equal(t, "mode.go", operations[3].SourcePath)
+	assert.Equal(t, "mode.go", operations[3].TargetPath)
+	assert.False(t, operations[3].MutatesFileSet())
+}
+
+func TestApplyPatchOperations(t *testing.T) {
+	t.Parallel()
+
+	patchData := []byte(`diff --git a/a.go b/a.go
+deleted file mode 100644
+index 1111111..0000000
+--- a/a.go
++++ /dev/null
+@@ -1 +0,0 @@
+-content a
+diff --git a/c.go b/c.go
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/c.go
+@@ -0,0 +1 @@
++content c
+diff --git a/e.go b/f.go
+similarity index 100%
+rename from e.go
+rename to f.go
+`)
+	tree := map[string][]byte{
+		"a.go": []byte("content a\n"),
+		"e.go": []byte("content e\n"),
+	}
+	original := cloneTestTree(tree)
+
+	operations, err := ParsePatchOperations(patchData)
+	require.NoError(t, err)
+
+	applied, err := ApplyPatchOperations(tree, operations)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]byte{
+		"c.go": []byte("content c\n"),
+		"f.go": []byte("content e\n"),
+	}, applied)
+	assert.Equal(t, original, tree)
+}
+
+func TestParsePatchOperations_ClassifiesBinaryPatch(t *testing.T) {
+	t.Parallel()
+
+	operations, err := ParsePatchOperations(mustReadFile(t, filepath.Join("testdata", "significant", "binary-delta.diff")))
+	require.NoError(t, err)
+	require.Len(t, operations, 1)
+	assert.Equal(t, PatchOperationTypeBinary, operations[0].Type)
+	assert.True(t, operations[0].IsBinary)
+}
+
+func TestParsePatchOperations_RejectsGitApplyInvalidHeaderCombinations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		patch   []byte
+		wantErr string
+	}{
+		{
+			name: "create and copy",
+			patch: []byte(`diff --git a/1 b/2
+new file mode 100644
+copy from 1
+copy to 2
+`),
+			wantErr: "create and copy cannot be combined",
+		},
+		{
+			name: "create and rename",
+			patch: []byte(`diff --git a/1 b/2
+new file mode 100644
+rename from 1
+rename to 2
+`),
+			wantErr: "create and rename cannot be combined",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ParsePatchOperations(test.patch)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.wantErr)
+		})
+	}
+}
+
+func TestParsePatchOperations_RejectsGitApplyInconsistentFilenames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		patch   []byte
+		wantErr string
+	}{
+		{
+			name: "inconsistent new filename",
+			patch: []byte(`diff --git a/f b/f
+new file mode 100644
+index 0000000..d00491f
+--- /dev/null
++++ b/f-blah
+@@ -0,0 +1 @@
++1
+`),
+			wantErr: "inconsistent new filename",
+		},
+		{
+			name: "inconsistent old filename",
+			patch: []byte(`diff --git a/f b/f
+deleted file mode 100644
+index d00491f..0000000
+--- b/f-blah
++++ /dev/null
+@@ -1 +0,0 @@
+-1
+`),
+			wantErr: "inconsistent old filename",
+		},
+		{
+			name: "missing new filename",
+			patch: []byte(`diff --git a/f b/f
+index 0000000..d00491f
+--- a/f
+@@ -0,0 +1 @@
++1
+`),
+			wantErr: "lacks new filename information",
+		},
+		{
+			name: "missing old filename",
+			patch: []byte(`diff --git a/f b/f
+index d00491f..0000000
++++ b/f
+@@ -1 +0,0 @@
+-1
+`),
+			wantErr: "lacks old filename information",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ParsePatchOperations(test.patch)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.wantErr)
+		})
+	}
+}
+
+func TestParsePatchOperations_AcceptsQuotedFilenamesWithSpaces(t *testing.T) {
+	t.Parallel()
+
+	operations, err := ParsePatchOperations([]byte(`diff --git "a/foo bar.txt" "b/foo bar.txt"
+--- "a/foo bar.txt"
++++ "b/foo bar.txt"
+@@ -1 +1 @@
+-old
++new
+`))
+	require.NoError(t, err)
+	require.Len(t, operations, 1)
+	assert.Equal(t, "foo bar.txt", operations[0].SourcePath)
+	assert.Equal(t, "foo bar.txt", operations[0].TargetPath)
+}
+
 func TestPatchsetApply_AtomicOnFailure(t *testing.T) {
 	t.Parallel()
 

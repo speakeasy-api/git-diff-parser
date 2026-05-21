@@ -1,0 +1,5 @@
+{
+  "skipLibrary": true,
+  "upstream": "git.git t/t4112-apply-renames.sh",
+  "description": "combined copy, rename, and source-file modification"
+}

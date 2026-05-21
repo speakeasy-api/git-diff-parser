@@ -128,6 +128,47 @@ func TestApplyFile_ParityCorpus(t *testing.T) {
 	}
 }
 
+func TestApplyPatchOperations_ParityCorpus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("parity corpus is an integration test stream")
+	}
+
+	requireGitBinary(t)
+
+	cases := loadParityCases(t)
+	require.NotEmpty(t, cases)
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if !supportsPatchOperationParity(tc.fixture) {
+				t.Skip("fixture exercises git apply behavior outside the content-tree operation API")
+			}
+
+			oracles := runGitApplyOracles(t, tc)
+			require.NoError(t, oracles.exitErr)
+
+			operations, err := ParsePatchOperations(tc.patch)
+			require.NoError(t, err)
+
+			applied, err := ApplyPatchOperations(contentMap(tc.srcTree), operations)
+			require.NoError(t, err)
+			assertContentMap(t, oracles.tree, applied)
+		})
+	}
+}
+
+func supportsPatchOperationParity(fixture parityFixture) bool {
+	return !fixture.ExpectConflict &&
+		!fixture.ExpectGitError &&
+		!fixture.IgnoreWhitespace &&
+		len(fixture.GitArgs) == 0 &&
+		len(fixture.SrcModes) == 0 &&
+		len(fixture.OutModes) == 0
+}
+
 func runLibraryApply(t *testing.T, tc parityCase, rejectMode bool) (applyResult, error) {
 	t.Helper()
 
@@ -305,6 +346,10 @@ func loadParityTree(t *testing.T, legacyPath string, files map[string]string, mo
 		return tree
 	}
 
+	if info, err := os.Stat(legacyPath); err == nil && info.IsDir() {
+		return collectFixtureTree(t, legacyPath)
+	}
+
 	legacy := readParityFileMaybe(t, legacyPath)
 	if legacy == nil {
 		return nil
@@ -312,6 +357,30 @@ func loadParityTree(t *testing.T, legacyPath string, files map[string]string, mo
 	return parityTree{
 		"file.txt": {content: legacy},
 	}
+}
+
+func collectFixtureTree(t *testing.T, root string) parityTree {
+	t.Helper()
+
+	tree := make(parityTree)
+	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		require.NoError(t, err)
+		if path == root || d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		require.NoError(t, err)
+		content, err := os.ReadFile(path)
+		require.NoError(t, err)
+		info, err := d.Info()
+		require.NoError(t, err)
+		tree[filepath.ToSlash(rel)] = parityFile{
+			content: content,
+			mode:    info.Mode().Perm(),
+		}
+		return nil
+	}))
+	return tree
 }
 
 func parseParityMode(raw string) fs.FileMode {
@@ -399,6 +468,29 @@ func assertParityTree(t *testing.T, want, got parityTree) {
 		if expected.mode != 0 {
 			assert.Equal(t, expected.mode, actual.mode, "mode mismatch for %s", path)
 		}
+	}
+	for path := range got {
+		_, ok := want[path]
+		assert.True(t, ok, "unexpected file %s", path)
+	}
+}
+
+func contentMap(tree parityTree) map[string][]byte {
+	content := make(map[string][]byte, len(tree))
+	for path, file := range tree {
+		content[path] = append([]byte(nil), file.content...)
+	}
+	return content
+}
+
+func assertContentMap(t *testing.T, want parityTree, got map[string][]byte) {
+	t.Helper()
+
+	require.Len(t, got, len(want))
+	for path, expected := range want {
+		actual, ok := got[path]
+		require.True(t, ok, "missing file %s", path)
+		assert.Equal(t, expected.content, actual, "content mismatch for %s", path)
 	}
 	for path := range got {
 		_, ok := want[path]

@@ -1,0 +1,5 @@
+{
+  "skipLibrary": true,
+  "upstream": "git.git t/t4102-apply-rename.sh",
+  "description": "rename with content edit"
+}
