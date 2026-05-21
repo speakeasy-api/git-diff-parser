@@ -206,8 +206,12 @@ func (p *parser) tryVisitHeader(diff string) bool {
 		return false
 	}
 
-	if strings.HasPrefix(diff, "+++ ") || strings.HasPrefix(diff, "--- ") {
-		// ignore -- we're still in the FileDiff and we've already captured the file names
+	if strings.HasPrefix(diff, "--- ") {
+		p.diff.FileDiff[fileHEAD].oldFileHeaderPath = parseFileHeaderPath(diff, "--- ")
+		return true
+	}
+	if strings.HasPrefix(diff, "+++ ") {
+		p.diff.FileDiff[fileHEAD].newFileHeaderPath = parseFileHeaderPath(diff, "+++ ")
 		return true
 	}
 	if strings.HasPrefix(diff, "index ") {
@@ -414,6 +418,40 @@ func (p *parser) parseDiffLine(line string) fileDiff {
 		FromFile: oldPath,
 		ToFile:   newPath,
 	}
+}
+
+func parseFileHeaderPath(line, prefix string) string {
+	path := firstFileHeaderToken(strings.TrimPrefix(line, prefix))
+	if path == "/dev/null" {
+		return ""
+	}
+	if strings.HasPrefix(path, "a/") || strings.HasPrefix(path, "b/") {
+		return path[2:]
+	}
+	return path
+}
+
+func firstFileHeaderToken(header string) string {
+	if !strings.HasPrefix(header, `"`) {
+		if fields := strings.Fields(header); len(fields) > 0 {
+			return fields[0]
+		}
+		return header
+	}
+
+	var escaped bool
+	for i := 1; i < len(header); i++ {
+		switch {
+		case escaped:
+			escaped = false
+		case header[i] == '\\':
+			escaped = true
+		case header[i] == '"':
+			return header[1:i]
+		}
+	}
+
+	return strings.Trim(header, `"`)
 }
 
 func parsePercentValue(raw string) int {

@@ -118,8 +118,13 @@ type binaryPatch struct {
 	Content string
 }
 
-// fileDiff Source of truth: https://github.com/git/git/blob/master/diffcore.h#L106
-// Implemented in https://github.com/git/git/blob/master/diff.c#L3496
+// fileDiff models the subset of Git patch metadata exposed by this parser.
+//
+// Git represents generated diff pairs as diff_filepair:
+// https://github.com/git/git/blob/aec3f587505a472db67e9462d0702e7d463a449d/diffcore.h#L107-L130
+//
+// Git emits unified patch file headers in builtin_diff:
+// https://github.com/git/git/blob/aec3f587505a472db67e9462d0702e7d463a449d/diff.c#L3838-L3930
 type fileDiff struct {
 	FromFile           string        `json:"from_file"`
 	ToFile             string        `json:"to_file"`
@@ -138,6 +143,16 @@ type fileDiff struct {
 	CopyTo             string        `json:"copy_to,omitempty"`
 	Hunks              []hunk        `json:"hunks"`
 	BinaryPatch        []binaryPatch `json:"binary_patch"`
+
+	// Parser-only paths from the "---" and "+++" file header lines. Git apply
+	// validates these against the diff --git/copy/rename names in apply.c:
+	// https://github.com/git/git/blob/aec3f587505a472db67e9462d0702e7d463a449d/apply.c#L929-L966
+	// https://github.com/git/git/blob/aec3f587505a472db67e9462d0702e7d463a449d/apply.c#L1330-L1453
+	//
+	// They are intentionally unexported and omitted from JSON because they are
+	// input syntax used for validation, not semantic diff metadata.
+	oldFileHeaderPath string
+	newFileHeaderPath string
 }
 
 func (fd *fileDiff) GoString() string {

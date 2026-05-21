@@ -87,8 +87,11 @@ type patchset struct {
 }
 
 type patchsetFile struct {
-	Diff  fileDiff
-	Patch []byte
+	Diff       fileDiff
+	Patch      []byte
+	Operation  patchsetOperation
+	SourcePath string
+	TargetPath string
 }
 
 func parsePatchset(patchData []byte) (patchset, []error) {
@@ -105,24 +108,25 @@ func parsePatchset(patchData []byte) (patchset, []error) {
 	}
 
 	files := make([]patchsetFile, len(chunks))
+	var operationErrs []error
 	for i := range chunks {
 		files[i] = patchsetFile{
 			Diff:  parsed.FileDiff[i],
 			Patch: chunks[i],
 		}
+		if err := classifyPatchsetFile(&files[i]); err != nil {
+			operationErrs = append(operationErrs, err)
+		}
+	}
+	if len(operationErrs) > 0 {
+		return patchset{}, operationErrs
 	}
 
 	return patchset{Files: files}, nil
 }
 
 func (p patchset) apply(tree map[string][]byte) (map[string][]byte, error) {
-	out := cloneTree(tree)
-	for i := range p.Files {
-		if err := applyPatchsetFile(out, &p.Files[i]); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return applyPatchsetFiles(tree, p.filePointers())
 }
 
 func applyPatchset(tree map[string][]byte, patchData []byte) (map[string][]byte, error) {
@@ -135,6 +139,14 @@ func applyPatchset(tree map[string][]byte, patchData []byte) (map[string][]byte,
 
 func ApplyPatchset(tree map[string][]byte, patchData []byte) (map[string][]byte, error) {
 	return applyPatchset(tree, patchData)
+}
+
+func (p patchset) filePointers() []*patchsetFile {
+	files := make([]*patchsetFile, len(p.Files))
+	for i := range p.Files {
+		files[i] = &p.Files[i]
+	}
+	return files
 }
 
 func cloneTree(tree map[string][]byte) map[string][]byte {
